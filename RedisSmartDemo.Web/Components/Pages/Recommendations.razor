@@ -76,7 +76,7 @@ else if (!string.IsNullOrWhiteSpace(selectedUserId))
         }
         catch
         {
-            statusMessage = "Unable to load users.";
+            statusMessage = "Failed to load users from the API. Please try again later.";
         }
         finally
         {
@@ -102,7 +102,7 @@ else if (!string.IsNullOrWhiteSpace(selectedUserId))
         }
         catch
         {
-            statusMessage = "Unable to load recommendations.";
+            statusMessage = "Failed to load recommendations for the selected user. Please try again.";
         }
         finally
         {
@@ -118,17 +118,38 @@ else if (!string.IsNullOrWhiteSpace(selectedUserId))
         try
         {
             var products = await RecommendationsApi.GetProductsAsync();
+            const int maxConcurrentEmbeds = 4;
+            var cancellationToken = CancellationToken.None;
+            var successfulEmbeds = 0;
+            var failedEmbeds = 0;
+            using var semaphore = new SemaphoreSlim(maxConcurrentEmbeds);
 
-            foreach (var product in products)
+            await Task.WhenAll(products.Select(async product =>
             {
-                await RecommendationsApi.EmbedProductAsync(product.Id);
-            }
+                await semaphore.WaitAsync(cancellationToken);
 
-            statusMessage = $"Embedded {products.Length} products.";
+                try
+                {
+                    await RecommendationsApi.EmbedProductAsync(product.Id, cancellationToken);
+                    Interlocked.Increment(ref successfulEmbeds);
+                }
+                catch
+                {
+                    Interlocked.Increment(ref failedEmbeds);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }));
+
+            statusMessage = failedEmbeds == 0
+                ? $"Embedded {successfulEmbeds} products."
+                : $"Embedded {successfulEmbeds} products, {failedEmbeds} failed.";
         }
         catch
         {
-            statusMessage = "Unable to embed products.";
+            statusMessage = "Failed to embed one or more products. Please check the API service and try again.";
         }
         finally
         {
