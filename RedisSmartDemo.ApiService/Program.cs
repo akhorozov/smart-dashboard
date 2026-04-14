@@ -35,6 +35,7 @@ app.MapPost("/users", async (User user, IConnectionMultiplexer redis) =>
 
     await jsonDb.SetAsync($"user:{user.Id}", "$", user);
     await db.SetAddAsync("users", user.Id);
+    await PublishActivityAsync(db, "user-created", ("userId", user.Id), ("name", user.Name));
 
     return Results.Created($"/users/{user.Id}", user);
 });
@@ -101,7 +102,45 @@ app.MapDelete("/users/{id}", async (string id, IConnectionMultiplexer redis) =>
     return Results.NoContent();
 });
 
+app.MapGet("/products/{id}", async (string id, IConnectionMultiplexer redis) =>
+{
+    var db = redis.GetDatabase();
+    var jsonDb = db.JSON();
+
+    var product = await jsonDb.GetAsync<Product>($"product:{id}");
+    if (product is null)
+        return Results.NotFound();
+
+    await PublishActivityAsync(db, "product-viewed", ("productId", product.Id), ("name", product.Name));
+
+    return Results.Ok(product);
+});
+
+app.MapPost("/products", async (Product product, IConnectionMultiplexer redis) =>
+{
+    var db = redis.GetDatabase();
+    var jsonDb = db.JSON();
+
+    await jsonDb.SetAsync($"product:{product.Id}", "$", product);
+    await db.SetAddAsync("products", product.Id);
+    await PublishActivityAsync(db, "product-created", ("productId", product.Id), ("name", product.Name));
+
+    return Results.Created($"/products/{product.Id}", product);
+});
+
 app.MapDefaultEndpoints();
 
 app.Run();
 
+static async Task PublishActivityAsync(IDatabase db, string activityType, params (string Key, string Value)[] details)
+{
+    var entries = new NameValueEntry[details.Length + 1];
+    entries[0] = new NameValueEntry("type", activityType);
+
+    for (var i = 0; i < details.Length; i++)
+    {
+        entries[i + 1] = new NameValueEntry(details[i].Key, details[i].Value);
+    }
+
+    await db.StreamAddAsync("activity", entries);
+}
