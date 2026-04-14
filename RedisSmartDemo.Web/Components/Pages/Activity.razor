@@ -1,0 +1,178 @@
+@page "/activity"
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+@inject ActivityStreamClient ActivityStreamApi
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Activity Feed</PageTitle>
+
+<h1>Activity Feed</h1>
+
+<p class="activity-status">@connectionStatus</p>
+
+<div class="activity-feed" @ref="feedContainer">
+    @foreach (var activityEvent in activityEvents)
+    {
+        <div class="activity-item">
+            <span class="badge @GetBadgeClass(activityEvent.Type)">@activityEvent.Type</span>
+            <span class="activity-time">@activityEvent.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
+            <span class="activity-message">@activityEvent.Message</span>
+        </div>
+    }
+</div>
+
+@code {
+    private const int MaxEvents = 50;
+    private readonly List<ActivityEvent> activityEvents = [];
+    private ElementReference feedContainer;
+    private CancellationTokenSource? cancellationTokenSource;
+    private string connectionStatus = "Connecting to activity stream...";
+    private bool shouldScrollToBottom;
+
+    protected override void OnInitialized()
+    {
+        cancellationTokenSource = new CancellationTokenSource();
+        _ = ListenForEventsAsync(cancellationTokenSource.Token);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!shouldScrollToBottom)
+        {
+            return;
+        }
+
+        shouldScrollToBottom = false;
+        await JSRuntime.InvokeVoidAsync("activityFeed.scrollToBottom", feedContainer);
+    }
+
+    private async Task ListenForEventsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await ActivityStreamApi.GetActivityStreamResponseAsync(cancellationToken);
+
+            response.EnsureSuccessStatusCode();
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var reader = new StreamReader(stream);
+            var eventData = new System.Text.StringBuilder();
+            string? eventType = null;
+
+            await InvokeAsync(() =>
+            {
+                connectionStatus = "Connected";
+                StateHasChanged();
+            });
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var line = await reader.ReadLineAsync(cancellationToken);
+                if (line is null)
+                {
+                    break;
+                }
+
+                if (line.Length == 0)
+                {
+                    if (eventType is not null || eventData.Length > 0)
+                    {
+                        var eventMessage = eventData.ToString().TrimEnd('\n');
+                        await AddEventAsync(eventType, eventMessage);
+                    }
+
+                    eventType = null;
+                    eventData.Clear();
+                    continue;
+                }
+
+                if (line.StartsWith("event:", StringComparison.OrdinalIgnoreCase))
+                {
+                    eventType = line["event:".Length..].Trim();
+                    continue;
+                }
+
+                if (line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                {
+                    eventData.AppendLine(line["data:".Length..].TrimStart());
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            await InvokeAsync(() =>
+            {
+                connectionStatus = $"Disconnected: {ex.Message}";
+                StateHasChanged();
+            });
+        }
+    }
+
+    private async Task AddEventAsync(string? eventType, string data)
+    {
+        var normalizedType = ResolveEventType(eventType, data);
+        var eventMessage = string.IsNullOrWhiteSpace(data) ? "(empty event)" : data;
+
+        await InvokeAsync(() =>
+        {
+            activityEvents.Add(new ActivityEvent(DateTimeOffset.UtcNow, normalizedType, eventMessage));
+
+            if (activityEvents.Count > MaxEvents)
+            {
+                activityEvents.RemoveRange(0, activityEvents.Count - MaxEvents);
+            }
+
+            shouldScrollToBottom = true;
+            StateHasChanged();
+        });
+    }
+
+    private static string ResolveEventType(string? eventType, string data)
+    {
+        if (!string.IsNullOrWhiteSpace(eventType))
+        {
+            return eventType.Trim().ToLowerInvariant();
+        }
+
+        try
+        {
+            using var jsonDocument = System.Text.Json.JsonDocument.Parse(data);
+
+            if (jsonDocument.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                jsonDocument.RootElement.TryGetProperty("type", out var typeProperty) &&
+                typeProperty.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                return typeProperty.GetString()?.Trim().ToLowerInvariant() ?? "unknown";
+            }
+        }
+        catch
+        {
+        }
+
+        return "unknown";
+    }
+
+    private static string GetBadgeClass(string eventType) => eventType switch
+    {
+        "user" => "badge-user",
+        "product" => "badge-product",
+        "order" => "badge-order",
+        _ => "badge-unknown"
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (cancellationTokenSource is null)
+        {
+            return;
+        }
+
+        await cancellationTokenSource.CancelAsync();
+        cancellationTokenSource.Dispose();
+    }
+
+    private sealed record ActivityEvent(DateTimeOffset Timestamp, string Type, string Message);
+}
