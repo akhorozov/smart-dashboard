@@ -6,10 +6,11 @@ var redis = builder.AddRedis("redis")
     .WithImageRegistry("docker.io")
     .WithImage("redis/redis-stack")
     .WithImageTag("latest")
-    .WithArgs("--loadmodule", "/opt/redis-stack/lib/rejson.so")
-    .WithArgs("--loadmodule", "/opt/redis-stack/lib/redisearch.so")
-    .WithArgs("--loadmodule", "/opt/redis-stack/lib/redistimeseries.so")
-    .WithArgs("--loadmodule", "/opt/redis-stack/lib/redisbloom.so");
+    .WithArgs(
+        "--loadmodule", "/opt/redis-stack/lib/rejson.so",
+        "--loadmodule", "/opt/redis-stack/lib/redisearch.so",
+        "--loadmodule", "/opt/redis-stack/lib/redistimeseries.so",
+        "--loadmodule", "/opt/redis-stack/lib/redisbloom.so");
 
 
 var apiService = builder.AddProject<Projects.RedisSmartDemo_ApiService>("apiservice")
