@@ -2,6 +2,7 @@ using RedisSmartDemo.Web;
 using RedisSmartDemo.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
+var apiServiceBaseAddress = new Uri("https+http://apiservice");
 
 // Add service defaults & Aspire client integrations.
 builder.AddServiceDefaults();
@@ -16,7 +17,12 @@ builder.Services.AddHttpClient<WeatherApiClient>(client =>
     {
         // This URL uses "https+http://" to indicate HTTPS is preferred over HTTP.
         // Learn more about service discovery scheme resolution at https://aka.ms/dotnet/sdschemes.
-        client.BaseAddress = new("https+http://apiservice");
+        client.BaseAddress = apiServiceBaseAddress;
+    });
+
+builder.Services.AddHttpClient<RecommendationsApiClient>(client =>
+    {
+        client.BaseAddress = apiServiceBaseAddress;
     });
 
 var app = builder.Build();
