@@ -1,0 +1,33 @@
+﻿@page "/products"
+@inject DashboardApiClient ApiClient
+
+<PageTitle>Products</PageTitle>
+
+<h1>Products</h1>
+
+@if (products is null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (products.Length == 0)
+{
+    <p>No products found.</p>
+}
+else
+{
+    <ul>
+        @foreach (var product in products)
+        {
+            <li><a href="@($"/products/{product.Id}")">@product.Name</a></li>
+        }
+    </ul>
+}
+
+@code {
+    private Product[]? products;
+
+    protected override async Task OnInitializedAsync()
+    {
+        products = await ApiClient.GetProductsAsync();
+    }
+}

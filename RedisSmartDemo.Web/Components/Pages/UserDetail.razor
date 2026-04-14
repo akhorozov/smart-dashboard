@@ -1,0 +1,62 @@
+﻿@page "/users/{Id}"
+@rendermode InteractiveServer
+@inject DashboardApiClient ApiClient
+
+<PageTitle>User Details</PageTitle>
+
+@if (isLoading)
+{
+    <p><em>Loading...</em></p>
+}
+else if (!found || user is null)
+{
+    <h1>User not found</h1>
+}
+else
+{
+    <h1>
+        @user.Name
+        @if (!string.IsNullOrWhiteSpace(cacheStatus))
+        {
+            <span class="@GetBadgeClass(cacheStatus)">@cacheStatus</span>
+        }
+    </h1>
+
+    <p><strong>Email:</strong> @user.Email</p>
+
+    <button class="btn btn-outline-secondary" @onclick="ClearCacheAsync">Clear Cache</button>
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private bool isLoading = true;
+    private bool found;
+    private User? user;
+    private string? cacheStatus;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadUserAsync();
+    }
+
+    private async Task LoadUserAsync()
+    {
+        isLoading = true;
+        var response = await ApiClient.GetUserAsync(Id);
+        found = response.Found;
+        user = response.Item;
+        cacheStatus = response.CacheStatus;
+        isLoading = false;
+    }
+
+    private async Task ClearCacheAsync()
+    {
+        await ApiClient.ClearCacheAsync($"cache:user:{Id}");
+        await LoadUserAsync();
+    }
+
+    private static string GetBadgeClass(string cache) => cache == "HIT"
+        ? "badge bg-success ms-2"
+        : "badge bg-secondary ms-2";
+}
