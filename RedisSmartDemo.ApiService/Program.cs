@@ -4,6 +4,8 @@ using RedisSmartDemo.Api.Models;
 using Scalar.AspNetCore;
 using StackExchange.Redis;
 
+const string ActivityChannelName = "activity";
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add service defaults & Aspire client integrations.
@@ -103,7 +105,10 @@ app.MapDelete("/users/{id}", async (string id, IConnectionMultiplexer redis) =>
 
 app.MapPost("/activity/publish", async (ActivityPublishRequest request, IConnectionMultiplexer redis) =>
 {
-    var activityChannel = RedisChannel.Literal("activity");
+    if (string.IsNullOrWhiteSpace(request.Message))
+        return Results.BadRequest("Message is required.");
+
+    var activityChannel = RedisChannel.Literal(ActivityChannelName);
     var subscriber = redis.GetSubscriber();
     await subscriber.PublishAsync(activityChannel, request.Message);
 
@@ -116,26 +121,41 @@ app.MapGet("/activity/stream", async (HttpContext context, IConnectionMultiplexe
     context.Response.Headers.CacheControl = "no-cache";
     context.Response.Headers.Connection = "keep-alive";
 
-    var activityChannel = RedisChannel.Literal("activity");
+    var activityChannel = RedisChannel.Literal(ActivityChannelName);
     var subscriber = redis.GetSubscriber();
-    var queue = await subscriber.SubscribeAsync(activityChannel);
+    ChannelMessageQueue? queue = null;
 
     try
     {
-        while (!context.RequestAborted.IsCancellationRequested)
+        queue = await subscriber.SubscribeAsync(activityChannel);
+
+        while (true)
         {
-            var message = await queue.ReadAsync(context.RequestAborted);
-            await context.Response.WriteAsync($"data: {message.Message}\n\n", context.RequestAborted);
+            if (context.RequestAborted.IsCancellationRequested)
+                break;
+
+            ChannelMessage message;
+            try
+            {
+                message = await queue.ReadAsync(context.RequestAborted);
+            }
+            catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+            {
+                break;
+            }
+
+            foreach (var line in message.Message.ToString().Replace("\r", "").Split('\n'))
+            {
+                await context.Response.WriteAsync($"data: {line}\n", context.RequestAborted);
+            }
+            await context.Response.WriteAsync("\n", context.RequestAborted);
             await context.Response.Body.FlushAsync(context.RequestAborted);
         }
     }
-    catch (OperationCanceledException)
-    {
-        // Client disconnected.
-    }
     finally
     {
-        await queue.UnsubscribeAsync();
+        if (queue != null)
+            await queue.UnsubscribeAsync();
     }
 });
 
