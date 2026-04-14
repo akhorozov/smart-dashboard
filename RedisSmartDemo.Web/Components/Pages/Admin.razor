@@ -1,0 +1,287 @@
+@page "/admin"
+@rendermode InteractiveServer
+@implements IDisposable
+@inject IHttpClientFactory HttpClientFactory
+@using System.Text.Json
+
+<PageTitle>Admin Tools</PageTitle>
+
+<h1>Admin Tools</h1>
+
+<div class="row g-4">
+    <div class="col-12 col-lg-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Bloom Filter Panel</div>
+            <div class="card-body d-flex flex-column gap-3">
+                <div>
+                    <label class="form-label" for="email-input">Email</label>
+                    <input id="email-input" class="form-control" @bind="email" />
+                </div>
+
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-primary" @onclick="CheckEmailAsync">Check</button>
+                    <button class="btn btn-outline-primary" @onclick="RegisterEmailAsync">Register</button>
+                </div>
+
+                @if (emailCheckResult.HasValue)
+                {
+                    <div>
+                        <span class="badge @(emailCheckResult.Value ? "bg-success" : "bg-secondary")">
+                            @(emailCheckResult.Value ? "HIT" : "MISS")
+                        </span>
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(bloomStatus))
+                {
+                    <div class="text-muted">@bloomStatus</div>
+                }
+
+                <hr />
+
+                <div>
+                    <label class="form-label" for="seen-user-input">User ID</label>
+                    <input id="seen-user-input" class="form-control" @bind="seenUserId" />
+                </div>
+                <div>
+                    <label class="form-label" for="seen-product-input">Product ID</label>
+                    <input id="seen-product-input" class="form-control" @bind="seenProductId" />
+                </div>
+
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-primary" @onclick="CheckSeenAsync">Check if Seen</button>
+                    <button class="btn btn-outline-primary" @onclick="MarkSeenAsync">Mark as Seen</button>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(seenStatus))
+                {
+                    <div class="text-muted">@seenStatus</div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Rate Limiter Panel</div>
+            <div class="card-body d-flex flex-column gap-3">
+                <div>
+                    <label class="form-label" for="rate-user-input">User ID</label>
+                    <input id="rate-user-input" class="form-control" @bind="rateLimitUserId" />
+                </div>
+
+                <div>
+                    <button class="btn btn-primary" @onclick="SendRateLimitRequestAsync">Send Request</button>
+                </div>
+
+                <div>
+                    <div class="progress" role="progressbar" aria-label="Rate limit usage" aria-valuemin="0" aria-valuemax="@rateLimitMax" aria-valuenow="@rateLimitUsed">
+                        <div class="progress-bar" style="width: @RateLimitPercent%;">@rateLimitUsed/@rateLimitMax</div>
+                    </div>
+                    <div class="text-muted mt-2">@rateLimitUsed/@rateLimitMax requests used</div>
+                </div>
+
+                @if (resetCountdownSeconds > 0)
+                {
+                    <div class="text-muted">Resets in @resetCountdownSeconds s</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(rateLimitStatus))
+                {
+                    <div class="text-muted">@rateLimitStatus</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string email = string.Empty;
+    private bool? emailCheckResult;
+    private string bloomStatus = string.Empty;
+
+    private string seenUserId = string.Empty;
+    private string seenProductId = string.Empty;
+    private string seenStatus = string.Empty;
+
+    private string rateLimitUserId = string.Empty;
+    private int rateLimitMax = 10;
+    private int rateLimitUsed;
+    private int resetCountdownSeconds;
+    private string rateLimitStatus = string.Empty;
+
+    private Timer? countdownTimer;
+
+    private int RateLimitPercent => rateLimitMax == 0 ? 0 : Math.Clamp(rateLimitUsed * 100 / rateLimitMax, 0, 100);
+
+    private HttpClient ApiClient => HttpClientFactory.CreateClient("ApiService");
+
+    private async Task CheckEmailAsync()
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            bloomStatus = "Email is required.";
+            return;
+        }
+
+        var result = await SendAndReadBoolAsync(HttpMethod.Get, $"/bloom/email/check/{Uri.EscapeDataString(email)}");
+        if (result is null)
+        {
+            bloomStatus = "Unable to check email.";
+            return;
+        }
+
+        emailCheckResult = result.Value;
+        bloomStatus = $"Email check: {(result.Value ? "HIT" : "MISS")}.";
+    }
+
+    private async Task RegisterEmailAsync()
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            bloomStatus = "Email is required.";
+            return;
+        }
+
+        var response = await ApiClient.PostAsync($"/bloom/email/register/{Uri.EscapeDataString(email)}", content: null);
+        bloomStatus = response.IsSuccessStatusCode ? "Email registered in bloom filter." : "Unable to register email.";
+    }
+
+    private async Task CheckSeenAsync()
+    {
+        if (string.IsNullOrWhiteSpace(seenUserId) || string.IsNullOrWhiteSpace(seenProductId))
+        {
+            seenStatus = "Both User ID and Product ID are required.";
+            return;
+        }
+
+        var result = await SendAndReadBoolAsync(HttpMethod.Get, $"/bloom/seen/check/{Uri.EscapeDataString(seenUserId)}/{Uri.EscapeDataString(seenProductId)}");
+        seenStatus = result.HasValue ? (result.Value ? "Seen: YES" : "Seen: NO") : "Unable to check seen state.";
+    }
+
+    private async Task MarkSeenAsync()
+    {
+        if (string.IsNullOrWhiteSpace(seenUserId) || string.IsNullOrWhiteSpace(seenProductId))
+        {
+            seenStatus = "Both User ID and Product ID are required.";
+            return;
+        }
+
+        var response = await ApiClient.PostAsync($"/bloom/seen/mark/{Uri.EscapeDataString(seenUserId)}/{Uri.EscapeDataString(seenProductId)}", content: null);
+        seenStatus = response.IsSuccessStatusCode ? "Marked as seen." : "Unable to mark as seen.";
+    }
+
+    private async Task SendRateLimitRequestAsync()
+    {
+        if (string.IsNullOrWhiteSpace(rateLimitUserId))
+        {
+            rateLimitStatus = "User ID is required.";
+            return;
+        }
+
+        var response = await ApiClient.GetAsync($"/ratelimit/check/{Uri.EscapeDataString(rateLimitUserId)}");
+        if (!response.IsSuccessStatusCode)
+        {
+            rateLimitStatus = "Rate limit check failed.";
+            return;
+        }
+
+        using var content = await response.Content.ReadAsStreamAsync();
+        using var json = await JsonDocument.ParseAsync(content);
+
+        var root = json.RootElement;
+        rateLimitUsed = ReadInt(root, "used", "usedRequests", "current", "count") ?? rateLimitUsed;
+        rateLimitMax = ReadInt(root, "limit", "max") ?? rateLimitMax;
+        var resetSeconds = ReadInt(root, "resetInSeconds", "resetSeconds", "retryAfterSeconds", "windowSeconds") ?? 0;
+        rateLimitStatus = "Request sent.";
+
+        StartCountdown(resetSeconds);
+    }
+
+    private async Task<bool?> SendAndReadBoolAsync(HttpMethod method, string relativeUri)
+    {
+        using var request = new HttpRequestMessage(method, relativeUri);
+        using var response = await ApiClient.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        using var content = await response.Content.ReadAsStreamAsync();
+        using var json = await JsonDocument.ParseAsync(content);
+        return ReadBool(json.RootElement, "hit", "seen", "exists", "value");
+    }
+
+    private static bool? ReadBool(JsonElement root, params string[] names)
+    {
+        if (root.ValueKind == JsonValueKind.True)
+        {
+            return true;
+        }
+
+        if (root.ValueKind == JsonValueKind.False)
+        {
+            return false;
+        }
+
+        foreach (var name in names)
+        {
+            if (root.TryGetProperty(name, out var value))
+            {
+                if (value.ValueKind == JsonValueKind.True)
+                {
+                    return true;
+                }
+
+                if (value.ValueKind == JsonValueKind.False)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static int? ReadInt(JsonElement root, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (root.TryGetProperty(name, out var value) && value.TryGetInt32(out var intValue))
+            {
+                return intValue;
+            }
+        }
+
+        return null;
+    }
+
+    private void StartCountdown(int seconds)
+    {
+        countdownTimer?.Dispose();
+
+        Interlocked.Exchange(ref resetCountdownSeconds, seconds);
+
+        if (seconds <= 0)
+        {
+            return;
+        }
+
+        countdownTimer = new Timer(_ =>
+        {
+            var remaining = Interlocked.Decrement(ref resetCountdownSeconds);
+            if (remaining <= 0)
+            {
+                countdownTimer?.Dispose();
+                countdownTimer = null;
+            }
+
+            _ = InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    public void Dispose()
+    {
+        countdownTimer?.Dispose();
+    }
+}
