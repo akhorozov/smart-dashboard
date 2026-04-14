@@ -106,14 +106,21 @@ app.MapGet("/ratelimit/check/{userId}", async (string userId, IConnectionMultipl
     const int limit = 10;
     const int windowSeconds = 60;
 
+    if (string.IsNullOrWhiteSpace(userId) ||
+        userId.Any(ch => !char.IsLetterOrDigit(ch) && ch != '-' && ch != '_'))
+    {
+        return Results.BadRequest(new { error = "Invalid userId format." });
+    }
+
     var db = redis.GetDatabase();
     var key = $"ratelimit:{userId}";
 
-    var count = await db.StringIncrementAsync(key);
-    if (count == 1)
-    {
-        await db.KeyExpireAsync(key, TimeSpan.FromSeconds(windowSeconds));
-    }
+    var count = (long)await db.ScriptEvaluateAsync(
+        "local current = redis.call('INCR', KEYS[1]) " +
+        "if current == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end " +
+        "return current",
+        [key],
+        [windowSeconds]);
 
     var ttl = await db.KeyTimeToLiveAsync(key);
     var resetInSeconds = ttl.HasValue ? Math.Max(0, (int)Math.Ceiling(ttl.Value.TotalSeconds)) : windowSeconds;
