@@ -1,0 +1,113 @@
+@page "/metrics"
+@implements IDisposable
+@inject MetricsApiClient MetricsApi
+
+<PageTitle>Metrics</PageTitle>
+
+<h1>Metrics</h1>
+
+<div class="row g-4">
+    @foreach (var chart in charts)
+    {
+        <div class="col-12 col-lg-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <ApexChart TItem="MetricPoint" Title="@chart.Title">
+                        <ApexPointSeries TItem="MetricPoint"
+                                         Items="chart.Points"
+                                         Name="@chart.Title"
+                                         XValue="point => point.Timestamp"
+                                         YValue="point => point.Value" />
+                    </ApexChart>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly MetricChart[] charts =
+    [
+        new("cpu", "CPU Usage"),
+        new("temperature", "Temperature"),
+        new("latency", "Latency (ms)"),
+        new("events", "Events/sec")
+    ];
+
+    private Timer? refreshTimer;
+    private bool isDisposed;
+    private int refreshInProgress;
+    private readonly CancellationTokenSource refreshCancellation = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await RefreshAsync(refreshCancellation.Token);
+        }
+        catch
+        {
+            // Initial load may fail if backend is unavailable.
+        }
+
+        refreshTimer = new Timer(
+            _ => _ = InvokeAsync(RefreshAndRenderAsync),
+            null,
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(5));
+    }
+
+    private async Task RefreshAndRenderAsync()
+    {
+        if (isDisposed)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref refreshInProgress, 1) == 1)
+        {
+            return;
+        }
+
+        try
+        {
+            await RefreshAsync(refreshCancellation.Token);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore cancellations during disposal.
+        }
+        catch
+        {
+            // Ignore refresh failures and retry on next timer tick.
+        }
+        finally
+        {
+            Interlocked.Exchange(ref refreshInProgress, 0);
+        }
+    }
+
+    private async Task RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        foreach (var chart in charts)
+        {
+            chart.Points = await MetricsApi.GetMetricAsync(chart.Name, cancellationToken);
+        }
+    }
+
+    public void Dispose()
+    {
+        isDisposed = true;
+        refreshCancellation.Cancel();
+        refreshTimer?.Dispose();
+        refreshCancellation.Dispose();
+    }
+
+    private sealed class MetricChart(string name, string title)
+    {
+        public string Name { get; } = name;
+        public string Title { get; } = title;
+        public MetricPoint[] Points { get; set; } = [];
+    }
+}

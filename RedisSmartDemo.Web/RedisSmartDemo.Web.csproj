@@ -10,4 +10,8 @@
     <ProjectReference Include="..\RedisSmartDemo.ServiceDefaults\RedisSmartDemo.ServiceDefaults.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Blazor-ApexCharts" Version="6.0.2" />
+  </ItemGroup>
+
 </Project>

@@ -1,6 +1,7 @@
 using NRedisStack;
 using NRedisStack.RedisStackCommands;
 using RedisSmartDemo.Api.Models;
+using RedisSmartDemo.ServiceDefaults;
 using Scalar.AspNetCore;
 using StackExchange.Redis;
 
@@ -101,7 +102,40 @@ app.MapDelete("/users/{id}", async (string id, IConnectionMultiplexer redis) =>
     return Results.NoContent();
 });
 
+app.MapGet("/metrics/{name}", (string name) =>
+{
+    const int PointCount = 61; // 5 minutes at 5-second intervals, including the starting point.
+    const double WaveFrequencyDivisor = 7d;
+
+    var metricName = name.ToLowerInvariant();
+    if (metricName is not ("cpu" or "temperature" or "latency" or "events"))
+    {
+        return Results.NotFound();
+    }
+
+    var now = DateTime.UtcNow;
+    var start = now.AddMinutes(-5);
+    var points = new List<MetricPoint>(PointCount);
+
+    for (var i = 0; i < PointCount; i++)
+    {
+        var timestamp = start.AddSeconds(i * 5);
+        var wave = Math.Sin(i / WaveFrequencyDivisor);
+        var value = metricName switch
+        {
+            "cpu" => Math.Clamp(55 + wave * 25 + Random.Shared.NextDouble() * 10, 0, 100),
+            "temperature" => Math.Clamp(62 + wave * 8 + Random.Shared.NextDouble() * 2, 45, 90),
+            "latency" => Math.Clamp(120 + wave * 35 + Random.Shared.NextDouble() * 15, 20, 400),
+            "events" => Math.Clamp(220 + wave * 70 + Random.Shared.NextDouble() * 20, 0, 1200),
+            _ => 0
+        };
+
+        points.Add(new MetricPoint(timestamp, Math.Round((decimal)value, 2)));
+    }
+
+    return Results.Ok(points);
+});
+
 app.MapDefaultEndpoints();
 
 app.Run();
-
