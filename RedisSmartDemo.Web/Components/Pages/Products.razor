@@ -1,0 +1,223 @@
+﻿@page "/products"
+@rendermode InteractiveServer
+
+<PageTitle>Products</PageTitle>
+
+<h1>Products</h1>
+
+<div class="row g-3 mb-4">
+    <div class="col-12 col-lg-4">
+        <label class="form-label" for="searchText">Search</label>
+        <input id="searchText" class="form-control" type="text" @bind="SearchText" />
+    </div>
+    <div class="col-12 col-md-6 col-lg-2">
+        <label class="form-label" for="categoryFilter">Category</label>
+        <select id="categoryFilter" class="form-select" @bind="SelectedCategory">
+            <option value="@AllCategoriesValue">All categories</option>
+            @foreach (var category in Categories)
+            {
+                <option value="@category">@category</option>
+            }
+        </select>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label" for="minPrice">Min price</label>
+        <InputNumber id="minPrice" class="form-control" @bind-Value="MinPrice" />
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label" for="maxPrice">Max price</label>
+        <InputNumber id="maxPrice" class="form-control" @bind-Value="MaxPrice" />
+    </div>
+    <div class="col-12 col-md-6 col-lg-2">
+        <label class="form-label" for="sortBy">Sort by</label>
+        <select id="sortBy" class="form-select" @bind="SortBy">
+            <option value="@SortByName">Name</option>
+            <option value="@SortByPrice">Price</option>
+            <option value="@SortByRelevance">Relevance</option>
+        </select>
+    </div>
+</div>
+
+<div class="row g-3">
+    @foreach (var product in filteredProducts)
+    {
+        <div class="col-12 col-md-6 col-xl-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">@product.Name</h5>
+                    <h6 class="card-subtitle mb-2 text-muted">@product.Category</h6>
+                    <p class="card-text fw-semibold mb-2">@product.Price.ToString("C")</p>
+                    <div class="d-flex flex-wrap gap-1">
+                        @foreach (var tag in product.Tags)
+                        {
+                            <span class="badge text-bg-light border">@tag</span>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private const string AllCategoriesValue = "";
+    private const string SortByName = "name";
+    private const string SortByPrice = "price";
+    private const string SortByRelevance = "relevance";
+
+    private static readonly IReadOnlyList<ProductItem> AllProducts =
+    [
+        new("4K Monitor", "Electronics", 349.99m, ["display", "office", "premium"]),
+        new("Bluetooth Keyboard", "Electronics", 59.99m, ["wireless", "office", "compact"]),
+        new("Desk Lamp", "Home", 34.50m, ["lighting", "desk", "minimal"]),
+        new("Running Shoes", "Sports", 89.00m, ["fitness", "lightweight", "comfort"]),
+        new("Coffee Beans", "Grocery", 14.99m, ["organic", "arabica", "fresh"]),
+        new("Water Bottle", "Sports", 19.95m, ["hydration", "bpa-free", "travel"]),
+        new("Notebook Set", "Office", 12.75m, ["paper", "writing", "school"]),
+        new("Noise Cancelling Headphones", "Electronics", 229.00m, ["audio", "wireless", "travel"])
+    ];
+
+    private static readonly IReadOnlyList<string> Categories =
+        AllProducts.Select(product => product.Category).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(category => category).ToList();
+
+    private IReadOnlyList<ProductItem> filteredProducts = AllProducts;
+    private string searchText = string.Empty;
+    private string selectedCategory = AllCategoriesValue;
+    private decimal? minPrice;
+    private decimal? maxPrice;
+    private string sortBy = SortByRelevance;
+
+    private string SearchText
+    {
+        get => searchText;
+        set
+        {
+            if (searchText == value)
+            {
+                return;
+            }
+
+            searchText = value;
+            UpdateFilteredProducts();
+        }
+    }
+
+    private string SelectedCategory
+    {
+        get => selectedCategory;
+        set
+        {
+            if (selectedCategory == value)
+            {
+                return;
+            }
+
+            selectedCategory = value;
+            UpdateFilteredProducts();
+        }
+    }
+
+    private decimal? MinPrice
+    {
+        get => minPrice;
+        set
+        {
+            if (minPrice == value)
+            {
+                return;
+            }
+
+            minPrice = value;
+            UpdateFilteredProducts();
+        }
+    }
+
+    private decimal? MaxPrice
+    {
+        get => maxPrice;
+        set
+        {
+            if (maxPrice == value)
+            {
+                return;
+            }
+
+            maxPrice = value;
+            UpdateFilteredProducts();
+        }
+    }
+
+    private string SortBy
+    {
+        get => sortBy;
+        set
+        {
+            if (sortBy == value)
+            {
+                return;
+            }
+
+            sortBy = value;
+            UpdateFilteredProducts();
+        }
+    }
+
+    protected override void OnInitialized() => UpdateFilteredProducts();
+
+    private void UpdateFilteredProducts()
+    {
+        var searchTerm = SearchText.Trim();
+        var filtered = AllProducts.Where(product => MatchesFilters(product, searchTerm));
+
+        filteredProducts = SortBy switch
+        {
+            SortByName => filtered.OrderBy(product => product.Name).ToList(),
+            SortByPrice => filtered.OrderBy(product => product.Price).ToList(),
+            _ => filtered.OrderByDescending(product => RelevanceScore(product, searchTerm)).ThenBy(product => product.Name).ToList()
+        };
+    }
+
+    private bool MatchesFilters(ProductItem product, string searchTerm) =>
+        MatchesSearch(product, searchTerm) &&
+        (SelectedCategory == AllCategoriesValue || string.Equals(product.Category, SelectedCategory, StringComparison.OrdinalIgnoreCase)) &&
+        (!MinPrice.HasValue || product.Price >= MinPrice.Value) &&
+        (!MaxPrice.HasValue || product.Price <= MaxPrice.Value);
+
+    private static bool MatchesSearch(ProductItem product, string searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return true;
+        }
+
+        return product.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+               product.Category.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+               product.Tags.Any(tag => tag.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static int RelevanceScore(ProductItem product, string searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return 0;
+        }
+
+        var score = 0;
+
+        if (product.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 3;
+        }
+
+        if (product.Category.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 2;
+        }
+
+        score += product.Tags.Count(tag => tag.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+
+        return score;
+    }
+
+    private sealed record ProductItem(string Name, string Category, decimal Price, IReadOnlyList<string> Tags);
+}
