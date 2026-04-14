@@ -147,29 +147,36 @@ app.MapGet("/metrics/{name}", async (string name, string? from, string? to, stri
         if (!long.TryParse(from, out var fromMs) || !long.TryParse(to, out var toMs))
             return Results.BadRequest("When aggregation is provided, both 'from' and 'to' must be unix timestamps in milliseconds.");
 
+        if (fromMs < 0 || toMs < 0)
+            return Results.BadRequest("'from' and 'to' must be non-negative unix timestamps in milliseconds.");
+
         if (toMs < fromMs)
             return Results.BadRequest("'to' must be greater than or equal to 'from'.");
 
         tsAggregation = parsedAggregation;
-        timeBucket = Math.Max(1, toMs - fromMs + 1);
+        try
+        {
+            timeBucket = checked((toMs - fromMs) + 1);
+        }
+        catch (OverflowException)
+        {
+            timeBucket = long.MaxValue;
+        }
     }
 
-    try
-    {
-        var db = redis.GetDatabase();
-        var points = await db.TS().RangeAsync(
-            $"metric:{name}",
-            fromTimestamp,
-            toTimestamp,
-            aggregation: tsAggregation,
-            timeBucket: timeBucket);
-
-        return Results.Ok(points.Select(p => new { timestamp = (long)p.Time, value = p.Val }));
-    }
-    catch (RedisServerException ex) when (ex.Message.Contains("key does not exist", StringComparison.OrdinalIgnoreCase))
-    {
+    var db = redis.GetDatabase();
+    var metricKey = $"metric:{name}";
+    if (!await db.KeyExistsAsync(metricKey))
         return Results.NotFound();
-    }
+
+    var points = await db.TS().RangeAsync(
+        metricKey,
+        fromTimestamp,
+        toTimestamp,
+        aggregation: tsAggregation,
+        timeBucket: timeBucket);
+
+    return Results.Ok(points.Select(p => new { timestamp = (long)p.Time, value = p.Val }));
 });
 
 app.MapDefaultEndpoints();
@@ -223,4 +230,4 @@ static bool TryParseTimeStamp(string? raw, bool isFrom, out TimeStamp timestamp)
     return false;
 }
 
-internal sealed record MetricRecordRequest(string Name, double Value, long? Timestamp);
+public sealed record MetricRecordRequest(string Name, double Value, long? Timestamp);
