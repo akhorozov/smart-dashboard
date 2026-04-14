@@ -117,7 +117,7 @@ app.MapGet("/ratelimit/check/{userId}", async (string userId, IConnectionMultipl
 
     var count = (long)await db.ScriptEvaluateAsync(
         "local current = redis.call('INCR', KEYS[1]) " +
-        "if redis.call('TTL', KEYS[1]) < 0 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end " +
+        "if redis.call('TTL', KEYS[1]) <= 0 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end " +
         "return current",
         [key],
         [windowSeconds]);
