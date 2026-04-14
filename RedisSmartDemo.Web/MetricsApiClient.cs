@@ -1,3 +1,5 @@
+using RedisSmartDemo.ServiceDefaults;
+
 namespace RedisSmartDemo.Web;
 
 public class MetricsApiClient(HttpClient httpClient)
@@ -7,5 +9,3 @@ public class MetricsApiClient(HttpClient httpClient)
         return await httpClient.GetFromJsonAsync<MetricPoint[]>($"/metrics/{name}", cancellationToken) ?? [];
     }
 }
-
-public sealed record MetricPoint(DateTime Timestamp, decimal Value);

@@ -36,12 +36,14 @@
 
     private Timer? refreshTimer;
     private bool isDisposed;
+    private int refreshInProgress;
+    private readonly CancellationTokenSource refreshCancellation = new();
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            await RefreshAsync();
+            await RefreshAsync(refreshCancellation.Token);
         }
         catch
         {
@@ -49,7 +51,7 @@
         }
 
         refreshTimer = new Timer(
-            async _ => await RefreshAndRenderAsync(),
+            _ => _ = InvokeAsync(RefreshAndRenderAsync),
             null,
             TimeSpan.FromSeconds(5),
             TimeSpan.FromSeconds(5));
@@ -62,29 +64,44 @@
             return;
         }
 
+        if (Interlocked.Exchange(ref refreshInProgress, 1) == 1)
+        {
+            return;
+        }
+
         try
         {
-            await RefreshAsync();
+            await RefreshAsync(refreshCancellation.Token);
             await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore cancellations during disposal.
         }
         catch
         {
             // Ignore refresh failures and retry on next timer tick.
         }
+        finally
+        {
+            Interlocked.Exchange(ref refreshInProgress, 0);
+        }
     }
 
-    private async Task RefreshAsync()
+    private async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         foreach (var chart in charts)
         {
-            chart.Points = await MetricsApi.GetMetricAsync(chart.Name);
+            chart.Points = await MetricsApi.GetMetricAsync(chart.Name, cancellationToken);
         }
     }
 
     public void Dispose()
     {
         isDisposed = true;
+        refreshCancellation.Cancel();
         refreshTimer?.Dispose();
+        refreshCancellation.Dispose();
     }
 
     private sealed class MetricChart(string name, string title)
