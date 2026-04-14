@@ -7,6 +7,7 @@ public sealed class SearchIndexInitializer(IConnectionMultiplexer redis) : IHost
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var db = redis.GetDatabase();
 
         try
