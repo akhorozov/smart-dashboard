@@ -1,0 +1,48 @@
+@ApiService_HostAddress = http://localhost:5525
+
+# Create a new user
+POST {{ApiService_HostAddress}}/users
+Content-Type: application/json
+
+{
+  "name": "Alice Johnson",
+  "email": "alice@example.com",
+  "preferences": {
+    "theme": "dark",
+    "language": "en"
+  }
+}
+
+###
+
+# Get all users
+GET {{ApiService_HostAddress}}/users
+Accept: application/json
+
+###
+
+# Get a user by ID
+GET {{ApiService_HostAddress}}/users/user-1
+Accept: application/json
+
+###
+
+# Update a user
+PUT {{ApiService_HostAddress}}/users/user-1
+Content-Type: application/json
+
+{
+  "name": "Alice Smith",
+  "email": "alice.smith@example.com",
+  "preferences": {
+    "theme": "light",
+    "language": "fr"
+  }
+}
+
+###
+
+# Delete a user
+DELETE {{ApiService_HostAddress}}/users/user-1
+
+###
