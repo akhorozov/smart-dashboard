@@ -101,7 +101,46 @@ app.MapDelete("/users/{id}", async (string id, IConnectionMultiplexer redis) =>
     return Results.NoContent();
 });
 
+app.MapPost("/activity/publish", async (ActivityPublishRequest request, IConnectionMultiplexer redis) =>
+{
+    var activityChannel = RedisChannel.Literal("activity");
+    var subscriber = redis.GetSubscriber();
+    await subscriber.PublishAsync(activityChannel, request.Message);
+
+    return Results.Accepted();
+});
+
+app.MapGet("/activity/stream", async (HttpContext context, IConnectionMultiplexer redis) =>
+{
+    context.Response.ContentType = "text/event-stream";
+    context.Response.Headers.CacheControl = "no-cache";
+    context.Response.Headers.Connection = "keep-alive";
+
+    var activityChannel = RedisChannel.Literal("activity");
+    var subscriber = redis.GetSubscriber();
+    var queue = await subscriber.SubscribeAsync(activityChannel);
+
+    try
+    {
+        while (!context.RequestAborted.IsCancellationRequested)
+        {
+            var message = await queue.ReadAsync(context.RequestAborted);
+            await context.Response.WriteAsync($"data: {message.Message}\n\n", context.RequestAborted);
+            await context.Response.Body.FlushAsync(context.RequestAborted);
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        // Client disconnected.
+    }
+    finally
+    {
+        await queue.UnsubscribeAsync();
+    }
+});
+
 app.MapDefaultEndpoints();
 
 app.Run();
 
+public record ActivityPublishRequest(string Message);
