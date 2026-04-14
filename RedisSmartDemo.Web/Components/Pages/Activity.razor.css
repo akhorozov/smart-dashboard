@@ -1,0 +1,57 @@
+.activity-status {
+    color: #666;
+}
+
+.activity-feed {
+    border: 1px solid #ddd;
+    border-radius: 0.5rem;
+    height: 420px;
+    overflow-y: auto;
+    padding: 0.75rem;
+    background-color: #fff;
+}
+
+.activity-item {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    border-bottom: 1px solid #f0f0f0;
+    padding: 0.4rem 0;
+    word-break: break-word;
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-time {
+    color: #666;
+    font-size: 0.85rem;
+    min-width: 4rem;
+}
+
+.activity-message {
+    flex: 1;
+}
+
+.badge {
+    color: #fff;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.badge-user {
+    background-color: #0d6efd;
+}
+
+.badge-product {
+    background-color: #198754;
+}
+
+.badge-order {
+    background-color: #fd7e14;
+}
+
+.badge-unknown {
+    background-color: #6c757d;
+}
