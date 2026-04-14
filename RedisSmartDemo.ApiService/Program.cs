@@ -23,6 +23,11 @@ builder.Services.AddOpenApi();
 var app = builder.Build();
 const int VectorDimensions = 384;
 const int VectorByteLength = VectorDimensions * sizeof(float);
+const int MinimumSearchResultLength = 3;
+const int RecommendationTopK = 5;
+const string ProductKeyPrefix = "product:";
+const string ProductVectorIndex = "products:vec";
+const string EmbeddingFieldName = "Embedding";
 
 // Configure the HTTP request pipeline.
 app.UseExceptionHandler();
@@ -114,10 +119,10 @@ app.MapPost("/recommendations/embed", async (EmbedRecommendationRequest request,
     var embedding = BuildDeterministicEmbedding(request.ProductName);
     var db = redis.GetDatabase();
 
-    await db.HashSetAsync($"product:{request.ProductId}", [
+    await db.HashSetAsync($"{ProductKeyPrefix}{request.ProductId}", [
         new HashEntry("Id", request.ProductId),
         new HashEntry("Name", request.ProductName),
-        new HashEntry("Embedding", embedding)
+        new HashEntry(EmbeddingFieldName, embedding)
     ]);
 
     return Results.Ok(new
@@ -136,8 +141,11 @@ app.MapGet("/recommendations/{userId}", async (string userId, IConnectionMultipl
     var viewsTask = LoadHistoryProductIdsAsync(db, $"user:{userId}:views");
     await Task.WhenAll(purchasesTask, viewsTask);
 
-    var historyProductIds = purchasesTask.Result
-        .Concat(viewsTask.Result)
+    var purchases = await purchasesTask;
+    var views = await viewsTask;
+
+    var historyProductIds = purchases
+        .Concat(views)
         .Distinct(StringComparer.Ordinal)
         .ToArray();
 
@@ -147,15 +155,20 @@ app.MapGet("/recommendations/{userId}", async (string userId, IConnectionMultipl
     var vectors = new List<float[]>(historyProductIds.Length);
     foreach (var productId in historyProductIds)
     {
-        var productKey = $"product:{productId}";
+        var productKey = $"{ProductKeyPrefix}{productId}";
         if (!await db.KeyExistsAsync(productKey))
-            productKey = productId;
+        {
+            if (await db.KeyExistsAsync(productId))
+                productKey = productId;
+            else
+                continue;
+        }
 
-        var embeddingValue = await db.HashGetAsync(productKey, "Embedding");
+        var embeddingValue = await db.HashGetAsync(productKey, EmbeddingFieldName);
         if (!embeddingValue.HasValue)
             continue;
 
-        var vector = ParseEmbeddingBytes(embeddingValue!);
+        var vector = ParseEmbeddingBytes(embeddingValue);
         if (vector is not null)
             vectors.Add(vector);
     }
@@ -167,8 +180,8 @@ app.MapGet("/recommendations/{userId}", async (string userId, IConnectionMultipl
 
     var searchResponse = await db.ExecuteAsync(
         "FT.SEARCH",
-        "products:vec",
-        "*=>[KNN 5 @Embedding $vector AS score]",
+        ProductVectorIndex,
+        $"*=>[KNN {RecommendationTopK} @{EmbeddingFieldName} $vector AS score]",
         "PARAMS",
         "2",
         "vector",
@@ -185,7 +198,7 @@ app.MapGet("/recommendations/{userId}", async (string userId, IConnectionMultipl
         "2");
 
     var results = ParseRecommendationSearchResult(searchResponse)
-        .Take(5)
+        .Take(RecommendationTopK)
         .ToArray();
 
     return Results.Ok(results);
@@ -242,7 +255,7 @@ static float[] BuildPreferenceVector(IEnumerable<float[]> vectors)
 static float[]? ParseEmbeddingBytes(RedisValue embedding)
 {
     var bytes = (byte[]?)embedding;
-    if (bytes is null || bytes.Length < VectorByteLength)
+    if (bytes is null || bytes.Length != VectorByteLength)
         return null;
 
     var vector = new float[VectorDimensions];
@@ -284,7 +297,7 @@ static IReadOnlyList<RecommendationResult> ParseRecommendationSearchResult(Redis
         return [];
 
     var resultArray = (RedisResult[])searchResponse!;
-    if (resultArray.Length < 3)
+    if (resultArray.Length < MinimumSearchResultLength)
         return [];
 
     var recommendations = new List<RecommendationResult>();
@@ -297,9 +310,7 @@ static IReadOnlyList<RecommendationResult> ParseRecommendationSearchResult(Redis
         for (var j = 0; j + 1 < fieldsArray.Length; j += 2)
             fields[fieldsArray[j].ToString()] = fieldsArray[j + 1].ToString();
 
-        var id = fields.TryGetValue("Id", out var productId) && !string.IsNullOrWhiteSpace(productId)
-            ? productId
-            : documentId.StartsWith("product:", StringComparison.Ordinal) ? documentId["product:".Length..] : documentId;
+        var id = GetProductId(documentId, fields);
 
         var name = fields.TryGetValue("Name", out var productName) ? productName : string.Empty;
         var scoreText = fields.TryGetValue("score", out var scoreValue) ? scoreValue : "0";
@@ -309,6 +320,17 @@ static IReadOnlyList<RecommendationResult> ParseRecommendationSearchResult(Redis
     }
 
     return recommendations;
+}
+
+static string GetProductId(string documentId, IDictionary<string, string> fields)
+{
+    if (fields.TryGetValue("Id", out var productId) && !string.IsNullOrWhiteSpace(productId))
+        return productId;
+
+    if (documentId.StartsWith(ProductKeyPrefix, StringComparison.Ordinal))
+        return documentId[ProductKeyPrefix.Length..];
+
+    return documentId;
 }
 
 record EmbedRecommendationRequest(string ProductId, string ProductName);
