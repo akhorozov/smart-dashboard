@@ -24,8 +24,23 @@ public sealed class MetricsBackgroundService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            await AddMetricsPointAsync(db);
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            try
+            {
+                await AddMetricsPointAsync(db);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to add one or more metrics datapoints.");
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 
