@@ -19,6 +19,8 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+await EnsureProductsVectorIndexAsync(app.Services.GetRequiredService<IConnectionMultiplexer>(), app.Logger);
+
 // Configure the HTTP request pipeline.
 app.UseExceptionHandler();
 
@@ -105,3 +107,45 @@ app.MapDefaultEndpoints();
 
 app.Run();
 
+static async Task EnsureProductsVectorIndexAsync(IConnectionMultiplexer redis, ILogger logger)
+{
+    const string productsVectorIndexName = "products:vec";
+    const int embeddingDimension = 384;
+
+    var db = redis.GetDatabase();
+    var existingIndexes = (RedisResult[]?)await db.ExecuteAsync("FT._LIST");
+    if (existingIndexes?.Any(index => string.Equals((string?)index, productsVectorIndexName, StringComparison.Ordinal)) == true)
+    {
+        return;
+    }
+
+    try
+    {
+        object[] vectorAttributes =
+        [
+            "TYPE", "FLOAT32",
+            "DIM", embeddingDimension.ToString(),
+            "DISTANCE_METRIC", "COSINE"
+        ];
+
+        var createIndexArguments = new List<object>
+        {
+            productsVectorIndexName,
+            "ON", "JSON",
+            "SCHEMA",
+            "$.Embedding", "VECTOR", "HNSW", vectorAttributes.Length.ToString()
+        };
+        createIndexArguments.AddRange(vectorAttributes);
+
+        await db.ExecuteAsync("FT.CREATE", createIndexArguments.ToArray());
+    }
+    catch (RedisServerException ex) when (ex.Message.Contains("Index already exists", StringComparison.OrdinalIgnoreCase))
+    {
+        logger.LogDebug(ex, "Vector index {IndexName} already exists.", productsVectorIndexName);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to initialize Redis vector index {IndexName}.", productsVectorIndexName);
+        throw new InvalidOperationException($"Failed to initialize Redis vector index '{productsVectorIndexName}'.", ex);
+    }
+}
