@@ -1,5 +1,6 @@
 using NRedisStack;
 using NRedisStack.RedisStackCommands;
+using RedisSmartDemo.ApiService.Services;
 using RedisSmartDemo.Api.Models;
 using Scalar.AspNetCore;
 using StackExchange.Redis;
@@ -13,6 +14,7 @@ builder.AddServiceDefaults();
 builder.Services.AddProblemDetails();
 
 builder.AddRedisClient("redis");
+builder.Services.AddHostedService<MetricsBackgroundService>();
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
@@ -104,4 +106,3 @@ app.MapDelete("/users/{id}", async (string id, IConnectionMultiplexer redis) =>
 app.MapDefaultEndpoints();
 
 app.Run();
-
