@@ -1,3 +1,4 @@
+using System.Net.Mail;
 using NRedisStack;
 using NRedisStack.RedisStackCommands;
 using RedisSmartDemo.Api.Models;
@@ -103,6 +104,9 @@ app.MapDelete("/users/{id}", async (string id, IConnectionMultiplexer redis) =>
 
 app.MapPost("/bloom/check-email", async (EmailRequest request, IConnectionMultiplexer redis) =>
 {
+    if (!IsValidEmail(request.Email))
+        return Results.BadRequest(new { error = "A valid email is required." });
+
     var db = redis.GetDatabase();
     var exists = await db.BF().ExistsAsync("bloom:emails", request.Email);
 
@@ -111,6 +115,9 @@ app.MapPost("/bloom/check-email", async (EmailRequest request, IConnectionMultip
 
 app.MapPost("/bloom/register-email", async (EmailRequest request, IConnectionMultiplexer redis) =>
 {
+    if (!IsValidEmail(request.Email))
+        return Results.BadRequest(new { error = "A valid email is required." });
+
     var db = redis.GetDatabase();
     await db.BF().AddAsync("bloom:emails", request.Email);
 
@@ -119,6 +126,9 @@ app.MapPost("/bloom/register-email", async (EmailRequest request, IConnectionMul
 
 app.MapPost("/bloom/check-product-view", async (ProductViewRequest request, IConnectionMultiplexer redis) =>
 {
+    if (!IsValidProductViewRequest(request))
+        return Results.BadRequest(new { error = "UserId and ProductId are required." });
+
     var db = redis.GetDatabase();
     var exists = await db.BF().ExistsAsync($"bloom:user:{request.UserId}:seen", request.ProductId);
 
@@ -127,11 +137,27 @@ app.MapPost("/bloom/check-product-view", async (ProductViewRequest request, ICon
 
 app.MapPost("/bloom/record-product-view", async (ProductViewRequest request, IConnectionMultiplexer redis) =>
 {
+    if (!IsValidProductViewRequest(request))
+        return Results.BadRequest(new { error = "UserId and ProductId are required." });
+
     var db = redis.GetDatabase();
     await db.BF().AddAsync($"bloom:user:{request.UserId}:seen", request.ProductId);
 
     return Results.Ok();
 });
+
+static bool IsValidEmail(string? email) =>
+    !string.IsNullOrWhiteSpace(email)
+    && email.Length <= 320
+    && !email.Any(char.IsControl)
+    && MailAddress.TryCreate(email, out var parsed)
+    && string.Equals(parsed.Address, email, StringComparison.OrdinalIgnoreCase);
+
+static bool IsValidProductViewRequest(ProductViewRequest request) =>
+    IsValidKeySegment(request.UserId) && IsValidKeySegment(request.ProductId);
+
+static bool IsValidKeySegment(string? value) =>
+    !string.IsNullOrWhiteSpace(value) && value.Length <= 256 && !value.Any(char.IsControl) && !value.Contains(':');
 
 app.MapDefaultEndpoints();
 
