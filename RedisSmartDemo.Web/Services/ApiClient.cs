@@ -26,14 +26,23 @@ public class ApiClient(HttpClient httpClient)
     public async Task<User[]> GetUsersAsync(CancellationToken cancellationToken = default)
         => await httpClient.GetFromJsonAsync<User[]>("/users", cancellationToken) ?? [];
 
-    public Task<User?> GetUserAsync(string id, CancellationToken cancellationToken = default)
-        => httpClient.GetFromJsonAsync<User>($"/users/{id}", cancellationToken);
+    public async Task<User?> GetUserAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync($"/users/{id}", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return await ReadRequiredJsonAsync<User>(response.Content, cancellationToken);
+    }
 
     public async Task<User> CreateUserAsync(User user, CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PostAsJsonAsync("/users", user, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<User>(cancellationToken))!;
+        return await ReadRequiredJsonAsync<User>(response.Content, cancellationToken);
     }
 
     public async Task<User?> UpdateUserAsync(string id, User user, CancellationToken cancellationToken = default)
@@ -45,7 +54,7 @@ public class ApiClient(HttpClient httpClient)
         }
 
         response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<User>(cancellationToken))!;
+        return await ReadRequiredJsonAsync<User>(response.Content, cancellationToken);
     }
 
     public async Task<bool> DeleteUserAsync(string id, CancellationToken cancellationToken = default)
@@ -59,6 +68,10 @@ public class ApiClient(HttpClient httpClient)
         response.EnsureSuccessStatusCode();
         return true;
     }
+
+    private static async Task<T> ReadRequiredJsonAsync<T>(HttpContent content, CancellationToken cancellationToken)
+        => await content.ReadFromJsonAsync<T>(cancellationToken)
+           ?? throw new InvalidOperationException($"Response body did not contain a valid '{typeof(T).Name}'.");
 }
 
 public record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
