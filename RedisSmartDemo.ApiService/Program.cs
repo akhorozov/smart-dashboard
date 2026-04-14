@@ -101,7 +101,42 @@ app.MapDelete("/users/{id}", async (string id, IConnectionMultiplexer redis) =>
     return Results.NoContent();
 });
 
+app.MapPost("/bloom/check-email", async (EmailRequest request, IConnectionMultiplexer redis) =>
+{
+    var db = redis.GetDatabase();
+    var exists = await db.BF().ExistsAsync("bloom:emails", request.Email);
+
+    return Results.Ok(new { exists });
+});
+
+app.MapPost("/bloom/register-email", async (EmailRequest request, IConnectionMultiplexer redis) =>
+{
+    var db = redis.GetDatabase();
+    await db.BF().AddAsync("bloom:emails", request.Email);
+
+    return Results.Ok();
+});
+
+app.MapPost("/bloom/check-product-view", async (ProductViewRequest request, IConnectionMultiplexer redis) =>
+{
+    var db = redis.GetDatabase();
+    var exists = await db.BF().ExistsAsync($"bloom:user:{request.UserId}:seen", request.ProductId);
+
+    return Results.Ok(new { exists });
+});
+
+app.MapPost("/bloom/record-product-view", async (ProductViewRequest request, IConnectionMultiplexer redis) =>
+{
+    var db = redis.GetDatabase();
+    await db.BF().AddAsync($"bloom:user:{request.UserId}:seen", request.ProductId);
+
+    return Results.Ok();
+});
+
 app.MapDefaultEndpoints();
 
 app.Run();
 
+public record EmailRequest(string Email);
+
+public record ProductViewRequest(string UserId, string ProductId);
