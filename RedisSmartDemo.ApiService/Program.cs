@@ -101,7 +101,28 @@ app.MapDelete("/users/{id}", async (string id, IConnectionMultiplexer redis) =>
     return Results.NoContent();
 });
 
+app.MapGet("/ratelimit/check/{userId}", async (string userId, IConnectionMultiplexer redis) =>
+{
+    const int limit = 10;
+    const int windowSeconds = 60;
+
+    var db = redis.GetDatabase();
+    var key = $"ratelimit:{userId}";
+
+    var count = await db.StringIncrementAsync(key);
+    if (count == 1)
+    {
+        await db.KeyExpireAsync(key, TimeSpan.FromSeconds(windowSeconds));
+    }
+
+    var ttl = await db.KeyTimeToLiveAsync(key);
+    var resetInSeconds = ttl.HasValue ? Math.Max(0, (int)Math.Ceiling(ttl.Value.TotalSeconds)) : windowSeconds;
+    var remaining = Math.Max(0, limit - (int)count);
+    var allowed = count <= limit;
+
+    return Results.Ok(new { remaining, limit, resetInSeconds, allowed });
+});
+
 app.MapDefaultEndpoints();
 
 app.Run();
-
