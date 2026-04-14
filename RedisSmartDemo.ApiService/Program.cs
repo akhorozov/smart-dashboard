@@ -19,6 +19,8 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+await EnsureProductsVectorIndexAsync(app.Services.GetRequiredService<IConnectionMultiplexer>());
+
 // Configure the HTTP request pipeline.
 app.UseExceptionHandler();
 
@@ -105,3 +107,24 @@ app.MapDefaultEndpoints();
 
 app.Run();
 
+static async Task EnsureProductsVectorIndexAsync(IConnectionMultiplexer redis)
+{
+    const string productsVectorIndexName = "products:vec";
+
+    var db = redis.GetDatabase();
+    var existingIndexes = (RedisResult[]?)await db.ExecuteAsync("FT._LIST");
+    if (existingIndexes?.Any(index => string.Equals((string?)index, productsVectorIndexName, StringComparison.Ordinal)) == true)
+    {
+        return;
+    }
+
+    await db.ExecuteAsync(
+        "FT.CREATE",
+        productsVectorIndexName,
+        "ON", "JSON",
+        "SCHEMA",
+        "$.Embedding", "VECTOR", "HNSW", "6",
+        "TYPE", "FLOAT32",
+        "DIM", "384",
+        "DISTANCE_METRIC", "COSINE");
+}
