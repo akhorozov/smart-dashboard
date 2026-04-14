@@ -1,0 +1,62 @@
+﻿@page "/products/{Id}"
+@rendermode InteractiveServer
+@inject DashboardApiClient ApiClient
+
+<PageTitle>Product Details</PageTitle>
+
+@if (isLoading)
+{
+    <p><em>Loading...</em></p>
+}
+else if (!found || product is null)
+{
+    <h1>Product not found</h1>
+}
+else
+{
+    <h1>
+        @product.Name
+        @if (!string.IsNullOrWhiteSpace(cacheStatus))
+        {
+            <span class="@GetBadgeClass(cacheStatus)">@cacheStatus</span>
+        }
+    </h1>
+
+    <p><strong>Price:</strong> @product.Price.ToString("C")</p>
+
+    <button class="btn btn-outline-secondary" @onclick="ClearCacheAsync">Clear Cache</button>
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private bool isLoading = true;
+    private bool found;
+    private Product? product;
+    private string? cacheStatus;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadProductAsync();
+    }
+
+    private async Task LoadProductAsync()
+    {
+        isLoading = true;
+        var response = await ApiClient.GetProductAsync(Id);
+        found = response.Found;
+        product = response.Item;
+        cacheStatus = response.CacheStatus;
+        isLoading = false;
+    }
+
+    private async Task ClearCacheAsync()
+    {
+        await ApiClient.ClearCacheAsync($"cache:product:{Id}");
+        await LoadProductAsync();
+    }
+
+    private static string GetBadgeClass(string cache) => cache == "HIT"
+        ? "badge bg-success ms-2"
+        : "badge bg-secondary ms-2";
+}

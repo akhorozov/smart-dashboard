@@ -1,0 +1,33 @@
+﻿@page "/users"
+@inject DashboardApiClient ApiClient
+
+<PageTitle>Users</PageTitle>
+
+<h1>Users</h1>
+
+@if (users is null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (users.Length == 0)
+{
+    <p>No users found.</p>
+}
+else
+{
+    <ul>
+        @foreach (var user in users)
+        {
+            <li><a href="@($"/users/{user.Id}")">@user.Name</a></li>
+        }
+    </ul>
+}
+
+@code {
+    private User[]? users;
+
+    protected override async Task OnInitializedAsync()
+    {
+        users = await ApiClient.GetUsersAsync();
+    }
+}

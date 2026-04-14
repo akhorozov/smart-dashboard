@@ -35,6 +35,7 @@ app.MapPost("/users", async (User user, IConnectionMultiplexer redis) =>
 
     await jsonDb.SetAsync($"user:{user.Id}", "$", user);
     await db.SetAddAsync("users", user.Id);
+    await db.KeyDeleteAsync($"cache:user:{user.Id}");
 
     return Results.Created($"/users/{user.Id}", user);
 });
@@ -58,15 +59,27 @@ app.MapGet("/users", async (IConnectionMultiplexer redis) =>
 });
 
 
-app.MapGet("/users/{id}", async (string id, IConnectionMultiplexer redis) =>
+app.MapGet("/users/{id}", async (string id, IConnectionMultiplexer redis, HttpContext httpContext) =>
 {
     var db = redis.GetDatabase();
     var jsonDb = db.JSON();
+    var cacheKey = $"cache:user:{id}";
+
+    var cachedUser = await jsonDb.GetAsync<User>(cacheKey);
+    if (cachedUser is not null)
+    {
+        httpContext.Response.Headers["X-Cache"] = "HIT";
+        return Results.Ok(cachedUser);
+    }
 
     var user = await jsonDb.GetAsync<User>($"user:{id}");
     if (user is null)
         return Results.NotFound();
 
+    await jsonDb.SetAsync(cacheKey, "$", user);
+    await db.KeyExpireAsync(cacheKey, TimeSpan.FromMinutes(5));
+
+    httpContext.Response.Headers["X-Cache"] = "MISS";
     return Results.Ok(user);
 });
 
@@ -84,6 +97,7 @@ app.MapPut("/users/{id}", async (string id, User updated, IConnectionMultiplexer
 
     var jsonDb = db.JSON();
     await jsonDb.SetAsync($"user:{id}", "$", updated);
+    await db.KeyDeleteAsync($"cache:user:{id}");
 
     return Results.Ok(updated);
 });
@@ -97,6 +111,102 @@ app.MapDelete("/users/{id}", async (string id, IConnectionMultiplexer redis) =>
         return Results.NotFound();
 
     await db.SetRemoveAsync("users", id);
+    await db.KeyDeleteAsync($"cache:user:{id}");
+
+    return Results.NoContent();
+});
+
+app.MapPost("/products", async (Product product, IConnectionMultiplexer redis) =>
+{
+    var db = redis.GetDatabase();
+    var jsonDb = db.JSON();
+
+    await jsonDb.SetAsync($"product:{product.Id}", "$", product);
+    await db.SetAddAsync("products", product.Id);
+    await db.KeyDeleteAsync($"cache:product:{product.Id}");
+
+    return Results.Created($"/products/{product.Id}", product);
+});
+
+app.MapGet("/products", async (IConnectionMultiplexer redis) =>
+{
+    var db = redis.GetDatabase();
+
+    var ids = await db.SetMembersAsync("products");
+    var products = new List<Product>();
+
+    var jsonDb = db.JSON();
+    foreach (var id in ids)
+    {
+        var product = await jsonDb.GetAsync<Product>($"product:{id}");
+        if (product != null)
+            products.Add(product);
+    }
+
+    return products;
+});
+
+app.MapGet("/products/{id}", async (string id, IConnectionMultiplexer redis, HttpContext httpContext) =>
+{
+    var db = redis.GetDatabase();
+    var jsonDb = db.JSON();
+    var cacheKey = $"cache:product:{id}";
+
+    var cachedProduct = await jsonDb.GetAsync<Product>(cacheKey);
+    if (cachedProduct is not null)
+    {
+        httpContext.Response.Headers["X-Cache"] = "HIT";
+        return Results.Ok(cachedProduct);
+    }
+
+    var product = await jsonDb.GetAsync<Product>($"product:{id}");
+    if (product is null)
+        return Results.NotFound();
+
+    await jsonDb.SetAsync(cacheKey, "$", product);
+    await db.KeyExpireAsync(cacheKey, TimeSpan.FromMinutes(5));
+
+    httpContext.Response.Headers["X-Cache"] = "MISS";
+    return Results.Ok(product);
+});
+
+app.MapPut("/products/{id}", async (string id, Product updated, IConnectionMultiplexer redis) =>
+{
+    var db = redis.GetDatabase();
+
+    var exists = await db.KeyExistsAsync($"product:{id}");
+    if (!exists)
+        return Results.NotFound();
+
+    updated.Id = id;
+
+    var jsonDb = db.JSON();
+    await jsonDb.SetAsync($"product:{id}", "$", updated);
+    await db.KeyDeleteAsync($"cache:product:{id}");
+
+    return Results.Ok(updated);
+});
+
+app.MapDelete("/products/{id}", async (string id, IConnectionMultiplexer redis) =>
+{
+    var db = redis.GetDatabase();
+
+    var removed = await db.KeyDeleteAsync($"product:{id}");
+    if (!removed)
+        return Results.NotFound();
+
+    await db.SetRemoveAsync("products", id);
+    await db.KeyDeleteAsync($"cache:product:{id}");
+
+    return Results.NoContent();
+});
+
+app.MapDelete("/cache/{key}", async (string key, IConnectionMultiplexer redis) =>
+{
+    var db = redis.GetDatabase();
+    var removed = await db.KeyDeleteAsync(key);
+    if (!removed)
+        return Results.NotFound();
 
     return Results.NoContent();
 });
@@ -104,4 +214,3 @@ app.MapDelete("/users/{id}", async (string id, IConnectionMultiplexer redis) =>
 app.MapDefaultEndpoints();
 
 app.Run();
-
