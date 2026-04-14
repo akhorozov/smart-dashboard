@@ -1,7 +1,7 @@
 @page "/activity"
 @rendermode InteractiveServer
 @implements IAsyncDisposable
-@inject IHttpClientFactory HttpClientFactory
+@inject ActivityStreamClient ActivityStreamApi
 @inject IJSRuntime JSRuntime
 
 <PageTitle>Activity Feed</PageTitle>
@@ -15,7 +15,7 @@
     {
         <div class="activity-item">
             <span class="badge @GetBadgeClass(activityEvent.Type)">@activityEvent.Type</span>
-            <span class="activity-time">@activityEvent.Timestamp.ToLocalTime():HH:mm:ss</span>
+            <span class="activity-time">@activityEvent.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
             <span class="activity-message">@activityEvent.Message</span>
         </div>
     }
@@ -50,14 +50,7 @@
     {
         try
         {
-            var client = HttpClientFactory.CreateClient("ApiService");
-            using var request = new HttpRequestMessage(HttpMethod.Get, "/activity/stream");
-            request.Headers.Accept.ParseAdd("text/event-stream");
-
-            using var response = await client.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
+            using var response = await ActivityStreamApi.GetActivityStreamResponseAsync(cancellationToken);
 
             response.EnsureSuccessStatusCode();
 
