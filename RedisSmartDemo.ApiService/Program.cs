@@ -4,6 +4,7 @@ using RedisSmartDemo.Api.Models;
 using Scalar.AspNetCore;
 using StackExchange.Redis;
 using System.Globalization;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -104,16 +105,22 @@ app.MapDelete("/users/{id}", async (string id, IConnectionMultiplexer redis) =>
 
 app.MapPost("/products", async (Product product, IConnectionMultiplexer redis) =>
 {
-    if (string.IsNullOrWhiteSpace(product.Id))
-        product.Id = Guid.NewGuid().ToString();
+    var productToSave = new Product
+    {
+        Id = string.IsNullOrWhiteSpace(product.Id) ? Guid.NewGuid().ToString() : product.Id,
+        Name = product.Name,
+        Description = product.Description,
+        Category = product.Category,
+        Price = product.Price
+    };
 
     var db = redis.GetDatabase();
     var jsonDb = db.JSON();
 
-    await jsonDb.SetAsync($"product:{product.Id}", "$", product);
-    await db.SetAddAsync("products", product.Id);
+    await jsonDb.SetAsync($"product:{productToSave.Id}", "$", productToSave);
+    await db.SetAddAsync("products", productToSave.Id);
 
-    return Results.Created($"/products/{product.Id}", product);
+    return Results.Created($"/products/{productToSave.Id}", productToSave);
 });
 
 app.MapGet("/products/search", async (string? q, string? category, decimal? minPrice, decimal? maxPrice, string? sortBy, IConnectionMultiplexer redis) =>
@@ -127,20 +134,23 @@ app.MapGet("/products/search", async (string? q, string? category, decimal? minP
     var queryParts = new List<string>();
 
     if (!string.IsNullOrWhiteSpace(q))
-        queryParts.Add(q);
+        queryParts.Add(EscapeRedisTextQuery(q));
 
     if (!string.IsNullOrWhiteSpace(category))
-        queryParts.Add($"@category:{{{EscapeTagValue(category)}}}");
+        queryParts.Add($"@category:{{{EscapeRedisTagValue(category)}}}");
 
     if (minPrice.HasValue || maxPrice.HasValue)
     {
-        var min = minPrice?.ToString(CultureInfo.InvariantCulture) ?? "-inf";
-        var max = maxPrice?.ToString(CultureInfo.InvariantCulture) ?? "+inf";
+        const string redisNegativeInfinity = "-inf";
+        const string redisPositiveInfinity = "+inf";
+        var min = minPrice?.ToString(CultureInfo.InvariantCulture) ?? redisNegativeInfinity;
+        var max = maxPrice?.ToString(CultureInfo.InvariantCulture) ?? redisPositiveInfinity;
         queryParts.Add($"@price:[{min} {max}]");
     }
 
+    const string redisNoContentArg = "NOCONTENT";
     var query = queryParts.Count == 0 ? "*" : string.Join(" ", queryParts);
-    var args = new List<object> { "idx:products", query, "NOCONTENT" };
+    var args = new List<object> { "idx:products", query, redisNoContentArg };
 
     var (sortField, sortOrder) = ParseSort(sortBy);
     if (sortField != null)
@@ -162,7 +172,7 @@ app.MapGet("/products/search", async (string? q, string? category, decimal? minP
     }
 
     RedisResult[]? results = (RedisResult[]?)searchResult;
-    if (results is null || results.Length <= 1)
+    if (results is null || results.Length < 2)
         return Results.Ok(Array.Empty<Product>());
 
     var products = new List<Product>();
@@ -246,8 +256,38 @@ static async Task EnsureProductsIndexAsync(IDatabase db)
     }
 }
 
-static string EscapeTagValue(string value) =>
-    value.Replace(@"\", @"\\").Replace("-", @"\-").Replace("|", @"\|").Replace("{", @"\{").Replace("}", @"\}");
+static string EscapeRedisTagValue(string value)
+{
+    var escaped = new StringBuilder(value.Length + 16);
+
+    foreach (var c in value)
+    {
+        if (c is '\\' or '-' or '|' or '{' or '}' or ' ' or ',')
+            escaped.Append('\\');
+
+        escaped.Append(c);
+    }
+
+    return escaped.ToString();
+}
+
+static string EscapeRedisTextQuery(string value)
+{
+    var escaped = new StringBuilder(value.Length + 16);
+
+    foreach (var c in value)
+    {
+        if (char.IsLetterOrDigit(c) || c == '_' || char.IsWhiteSpace(c))
+        {
+            escaped.Append(c);
+            continue;
+        }
+
+        escaped.Append('\\').Append(c);
+    }
+
+    return escaped.ToString();
+}
 
 static (string? field, string? order) ParseSort(string? sortBy)
 {
