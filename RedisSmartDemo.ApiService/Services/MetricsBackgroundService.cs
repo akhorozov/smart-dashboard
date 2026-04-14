@@ -48,11 +48,6 @@ public sealed class MetricsBackgroundService(
     {
         foreach (var key in MetricKeys)
         {
-            if (await db.KeyExistsAsync(key))
-            {
-                continue;
-            }
-
             try
             {
                 await db.ExecuteAsync("TS.CREATE", key);
@@ -60,6 +55,10 @@ public sealed class MetricsBackgroundService(
             catch (RedisServerException ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
             {
                 logger.LogDebug(ex, "Time series key {Key} already exists.", key);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to create time series key {Key}.", key);
             }
         }
     }
