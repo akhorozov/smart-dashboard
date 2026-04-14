@@ -1,29 +1,9 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">RedisSmartDemo</a>
-    </div>
-</div>
-
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
-
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill" aria-hidden="true"></span> Counter
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
-    </nav>
-</div>
+﻿<FluentNavMenu Width="220" Style="height: 100%; border-right: 1px solid #e0e0e0; background: #fafafa;">
+    <FluentNavLink Href="/" Match="NavLinkMatch.All">🏠 Home</FluentNavLink>
+    <FluentNavLink Href="/users">👤 Users</FluentNavLink>
+    <FluentNavLink Href="/products">📦 Products</FluentNavLink>
+    <FluentNavLink Href="/metrics">📈 Metrics</FluentNavLink>
+    <FluentNavLink Href="/activity">📡 Activity Feed</FluentNavLink>
+    <FluentNavLink Href="/recommendations">✨ Recommendations</FluentNavLink>
+    <FluentNavLink Href="/admin">🛡️ Admin Tools</FluentNavLink>
+</FluentNavMenu>

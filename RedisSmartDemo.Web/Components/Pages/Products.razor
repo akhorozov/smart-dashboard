@@ -1,0 +1,131 @@
+@page "/products"
+@inject ApiClient Api
+
+
+<PageTitle>Products</PageTitle>
+
+<FluentLabel Typo="Typography.H2">Products <FluentBadge Appearance="Appearance.Accent">RediSearch</FluentBadge></FluentLabel>
+
+<!-- Search bar -->
+<FluentCard Style="padding: 16px; margin-bottom: 20px;">
+    <FluentStack Orientation="Orientation.Horizontal" Wrap="true" HorizontalGap="12" Style="align-items: flex-end;">
+        <FluentTextField @bind-Value="_searchQ" Placeholder="Search..." Style="width: 200px;" Label="Keyword" />
+        <FluentTextField @bind-Value="_category" Placeholder="e.g. Electronics" Style="width: 160px;" Label="Category" />
+        <FluentNumberField @bind-Value="_minPrice" Placeholder="0" Style="width: 100px;" Label="Min $" />
+        <FluentNumberField @bind-Value="_maxPrice" Placeholder="999" Style="width: 100px;" Label="Max $" />
+        <FluentButton Appearance="Appearance.Accent" OnClick="SearchProducts">Search</FluentButton>
+        <FluentButton OnClick="ClearSearch">Clear</FluentButton>
+    </FluentStack>
+</FluentCard>
+
+<!-- Add product form -->
+<FluentCard Style="padding: 16px; margin-bottom: 20px;">
+    <FluentLabel Typo="Typography.H4" Style="margin-bottom: 12px;">Add Product</FluentLabel>
+    <FluentStack Orientation="Orientation.Horizontal" Wrap="true" HorizontalGap="12" Style="align-items: flex-end;">
+        <FluentTextField @bind-Value="_newName"     Placeholder="Name"           Style="width: 160px;" Label="Name" />
+        <FluentTextField @bind-Value="_newDesc"     Placeholder="Description"    Style="width: 200px;" Label="Description" />
+        <FluentTextField @bind-Value="_newCategory" Placeholder="Category"       Style="width: 140px;" Label="Category" />
+        <FluentNumberField @bind-Value="_newPrice"  Placeholder="0.00"           Style="width: 100px;" Label="Price" />
+        <FluentTextField @bind-Value="_newTags"     Placeholder="tag1, tag2"     Style="width: 140px;" Label="Tags" />
+        <FluentButton Appearance="Appearance.Accent" OnClick="AddProduct" Disabled="_saving">Add</FluentButton>
+    </FluentStack>
+</FluentCard>
+
+@if (_loading)
+{
+    <FluentProgressRing />
+}
+else if (_products?.Count == 0)
+{
+    <FluentLabel>No products found. Add one above!</FluentLabel>
+}
+else if (_products != null)
+{
+    <FluentDataGrid Items="_products.AsQueryable()" TGridItem="Product" Style="width: 100%;">
+        <PropertyColumn Property="p => p.Name"     Title="Name" />
+        <PropertyColumn Property="p => p.Category" Title="Category" />
+        <PropertyColumn Property="p => p.Price"    Title="Price" Format="C2" />
+        <TemplateColumn Title="Tags" Context="p">
+            @string.Join(", ", p.Tags ?? [])
+        </TemplateColumn>
+        <TemplateColumn Title="Cache" Context="p">
+            @if (_cacheHits.Contains(p.Id))
+            {
+                <FluentBadge Appearance="Appearance.Accent" Style="background:#107c10;">HIT</FluentBadge>
+            }
+            else
+            {
+                <FluentBadge>MISS</FluentBadge>
+            }
+        </TemplateColumn>
+        <TemplateColumn Title="Actions" Context="p">
+            <FluentButton Appearance="Appearance.Outline" OnClick="() => FetchProduct(p.Id)">Fetch</FluentButton>
+            <FluentButton Appearance="Appearance.Outline" OnClick="() => EmbedProduct(p.Id)">Embed</FluentButton>
+            <FluentButton Appearance="Appearance.Outline" OnClick="() => DeleteProduct(p.Id)" Style="color: red;">Delete</FluentButton>
+        </TemplateColumn>
+    </FluentDataGrid>
+}
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <FluentMessageBar Intent="MessageIntent.Info" Style="margin-top: 12px;">@_message</FluentMessageBar>
+}
+
+@code {
+    private List<Product>? _products;
+    private HashSet<string> _cacheHits = new();
+    private string _searchQ = "", _category = "", _newName = "", _newDesc = "", _newCategory = "", _newTags = "";
+    private decimal _minPrice, _maxPrice, _newPrice;
+    private bool _loading = true, _saving = false;
+    private string _message = "";
+
+    protected override async Task OnInitializedAsync() => await SearchProducts();
+
+    private async Task SearchProducts()
+    {
+        _loading = true;
+        _products = await Api.SearchProductsAsync(
+            string.IsNullOrWhiteSpace(_searchQ)    ? null : _searchQ,
+            string.IsNullOrWhiteSpace(_category)   ? null : _category,
+            _minPrice > 0 ? _minPrice : null,
+            _maxPrice > 0 ? _maxPrice : null) ?? [];
+        _loading = false;
+    }
+
+    private void ClearSearch() { _searchQ = ""; _category = ""; _minPrice = 0; _maxPrice = 0; }
+
+    private async Task AddProduct()
+    {
+        if (string.IsNullOrWhiteSpace(_newName)) return;
+        _saving = true;
+        var product = new Product(
+            Guid.NewGuid().ToString(), _newName, _newDesc, _newCategory, _newPrice,
+            _newTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        await Api.CreateProductAsync(product);
+        _newName = _newDesc = _newCategory = _newTags = ""; _newPrice = 0;
+        _message = "Product added and indexed!";
+        _saving = false;
+        await SearchProducts();
+    }
+
+    private async Task FetchProduct(string id)
+    {
+        await Api.GetProductAsync(id);
+        _cacheHits.Add(id);
+        var stats = await Api.GetCacheStatsAsync();
+        _message = stats != null ? $"Cache — Hits: {stats.Hits}, Misses: {stats.Misses}, Hit rate: {stats.HitRate:P0}" : "";
+    }
+
+    private async Task EmbedProduct(string id)
+    {
+        await Api.EmbedProductAsync(id);
+        _message = $"Vector embedding stored for product {id[..8]}…";
+    }
+
+    private async Task DeleteProduct(string id)
+    {
+        await Api.DeleteProductAsync(id);
+        _cacheHits.Remove(id);
+        await SearchProducts();
+    }
+}

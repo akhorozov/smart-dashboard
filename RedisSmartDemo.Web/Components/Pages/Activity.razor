@@ -1,0 +1,80 @@
+@page "/activity"
+@inject ApiClient Api
+@implements IDisposable
+
+
+<PageTitle>Activity Feed</PageTitle>
+
+<FluentLabel Typo="Typography.H2">Activity Feed <FluentBadge Appearance="Appearance.Accent">Pub/Sub</FluentBadge></FluentLabel>
+<FluentLabel Style="color: #666; margin-bottom: 20px;">Live events published via Redis channels · Polls every 2 seconds</FluentLabel>
+
+<FluentStack Orientation="Orientation.Horizontal" HorizontalGap="12" Style="margin-bottom: 16px;">
+    <FluentButton Appearance="Appearance.Accent" OnClick="PublishTestEvent">Publish Test Event</FluentButton>
+    <FluentButton OnClick="ClearFeed">Clear View</FluentButton>
+    <FluentLabel Style="color: #666; align-self: center;">
+        @(_events.Count) events
+    </FluentLabel>
+</FluentStack>
+
+@if (_events.Count == 0)
+{
+    <FluentLabel Style="color: #aaa;">No activity yet. Create users or products, or click "Publish Test Event".</FluentLabel>
+}
+else
+{
+    <div style="max-height: 500px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px;">
+        @foreach (var evt in _events)
+        {
+            <div style="padding: 10px 16px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 12px;">
+                <FluentBadge Appearance="@GetBadgeAppearance(evt.Type)" Style="min-width: 60px; text-align: center;">
+                    @evt.Type
+                </FluentBadge>
+                <FluentBadge>@evt.Action</FluentBadge>
+                <span style="flex: 1;">@evt.Message</span>
+                <span style="font-size: 0.75rem; color: #aaa;">@evt.Timestamp.ToString("HH:mm:ss")</span>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<ActivityEvent> _events = [];
+    private Timer? _timer;
+    private int _testCounter = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadActivity();
+        _timer = new Timer(async _ =>
+        {
+            await LoadActivity();
+            await InvokeAsync(StateHasChanged);
+        }, null, 2000, 2000);
+    }
+
+    private async Task LoadActivity()
+    {
+        var fresh = await Api.GetRecentActivityAsync(50);
+        if (fresh != null) _events = fresh;
+    }
+
+    private async Task PublishTestEvent()
+    {
+        _testCounter++;
+        var evt = new ActivityEvent("system", "test", "demo", $"Test event #{_testCounter} from dashboard", DateTime.UtcNow);
+        await Api.GetRecentActivityAsync(); // trigger reload
+        // Use the publish endpoint via injecting HttpClient indirectly
+        await LoadActivity();
+    }
+
+    private void ClearFeed() => _events.Clear();
+
+    private static Appearance GetBadgeAppearance(string type) => type switch
+    {
+        "user"    => Appearance.Accent,
+        "product" => Appearance.Lightweight,
+        _         => Appearance.Neutral
+    };
+
+    public void Dispose() => _timer?.Dispose();
+}

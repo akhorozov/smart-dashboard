@@ -1,0 +1,189 @@
+@page "/admin"
+@inject ApiClient Api
+
+
+<PageTitle>Admin Tools</PageTitle>
+
+<FluentLabel Typo="Typography.H2">Admin Tools <FluentBadge Appearance="Appearance.Accent">Bloom + Rate Limiting</FluentBadge></FluentLabel>
+
+<FluentGrid Spacing="4">
+
+    <!-- Bloom Filter: Email -->
+    <FluentGridItem xs="12" md="6">
+        <FluentCard Style="padding: 16px; height: 100%;">
+            <FluentLabel Typo="Typography.H4" Style="margin-bottom: 12px;">🌸 Email Bloom Filter</FluentLabel>
+            <FluentLabel Style="color: #666; margin-bottom: 16px;">
+                Probabilistic uniqueness check — zero false negatives, rare false positives.
+            </FluentLabel>
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8" Style="margin-bottom: 12px;">
+                <FluentTextField @bind-Value="_email" Placeholder="user@example.com" Style="flex: 1;" />
+                <FluentButton OnClick="CheckEmail">Check</FluentButton>
+                <FluentButton Appearance="Appearance.Accent" OnClick="RegisterEmail">Register</FluentButton>
+            </FluentStack>
+            @if (_emailResult != null)
+            {
+                <FluentMessageBar Intent="@(_emailResult.Exists ? MessageIntent.Warning : MessageIntent.Success)">
+                    @(_emailResult.Exists
+                        ? $"'{_email}' already registered (Bloom says: EXISTS)"
+                        : $"'{_email}' is new (Bloom says: NOT EXISTS)")
+                </FluentMessageBar>
+            }
+            @if (!string.IsNullOrEmpty(_emailMsg))
+            {
+                <FluentMessageBar Intent="MessageIntent.Info" Style="margin-top: 8px;">@_emailMsg</FluentMessageBar>
+            }
+        </FluentCard>
+    </FluentGridItem>
+
+    <!-- Rate Limiter -->
+    <FluentGridItem xs="12" md="6">
+        <FluentCard Style="padding: 16px; height: 100%;">
+            <FluentLabel Typo="Typography.H4" Style="margin-bottom: 12px;">⏱️ Rate Limiter</FluentLabel>
+            <FluentLabel Style="color: #666; margin-bottom: 16px;">
+                Sliding 1-minute window · 10 requests max per user.
+            </FluentLabel>
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8" Style="margin-bottom: 12px;">
+                <FluentTextField @bind-Value="_rateLimitUserId" Placeholder="User ID" Style="flex: 1;" />
+                <FluentButton Appearance="Appearance.Accent" OnClick="HitRateLimit">Hit!</FluentButton>
+            </FluentStack>
+            @if (_rateLimitResult != null)
+            {
+                <div style="margin-top: 8px;">
+                    <FluentProgressBar
+                        Min="0"
+                        Max="@_rateLimitResult.Limit"
+                        Value="@_rateLimitResult.Used"
+                        Color="@(_rateLimitResult.IsLimited ? "red" : null)"
+                        Style="margin-bottom: 8px;" />
+                    <FluentLabel>
+                        Used: @_rateLimitResult.Used / @_rateLimitResult.Limit
+                        · Remaining: @_rateLimitResult.Remaining
+                    </FluentLabel>
+                    @if (_rateLimitResult.IsLimited)
+                    {
+                        <FluentMessageBar Intent="MessageIntent.Error" Style="margin-top: 8px;">
+                            🚫 Rate limit exceeded!
+                        </FluentMessageBar>
+                    }
+                </div>
+            }
+        </FluentCard>
+    </FluentGridItem>
+
+    <!-- Bloom Filter: Product Views -->
+    <FluentGridItem xs="12" md="6">
+        <FluentCard Style="padding: 16px;">
+            <FluentLabel Typo="Typography.H4" Style="margin-bottom: 12px;">👁️ Product View Tracker</FluentLabel>
+            <FluentLabel Style="color: #666; margin-bottom: 16px;">
+                Track which products a user has seen using a per-user Bloom filter.
+            </FluentLabel>
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8" Style="margin-bottom: 8px;">
+                <FluentTextField @bind-Value="_viewUserId" Placeholder="User ID" Style="flex: 1;" Label="User ID" />
+                <FluentTextField @bind-Value="_viewProductId" Placeholder="Product ID" Style="flex: 1;" Label="Product ID" />
+            </FluentStack>
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8">
+                <FluentButton OnClick="CheckProductView">Check</FluentButton>
+                <FluentButton Appearance="Appearance.Accent" OnClick="RecordProductView">Record View</FluentButton>
+            </FluentStack>
+            @if (_productViewResult != null)
+            {
+                <FluentMessageBar
+                    Intent="@(_productViewResult.Seen ? MessageIntent.Warning : MessageIntent.Success)"
+                    Style="margin-top: 8px;">
+                    @(_productViewResult.Seen
+                        ? "Already seen this product (Bloom says: EXISTS)"
+                        : "First time view (Bloom says: NOT EXISTS)")
+                </FluentMessageBar>
+            }
+            @if (!string.IsNullOrEmpty(_viewMsg))
+            {
+                <FluentMessageBar Intent="MessageIntent.Info" Style="margin-top: 8px;">@_viewMsg</FluentMessageBar>
+            }
+        </FluentCard>
+    </FluentGridItem>
+
+    <!-- Cache Stats -->
+    <FluentGridItem xs="12" md="6">
+        <FluentCard Style="padding: 16px;">
+            <FluentLabel Typo="Typography.H4" Style="margin-bottom: 12px;">🗄️ Cache Stats</FluentLabel>
+            @if (_cacheStats != null)
+            {
+                <FluentProgressBar Min="0" Max="1" Value="@((float)_cacheStats.HitRate)" Style="margin-bottom: 8px;" />
+                <FluentLabel>
+                    Hit rate: @_cacheStats.HitRate.ToString("P0")
+                    (Hits: @_cacheStats.Hits · Misses: @_cacheStats.Misses)
+                </FluentLabel>
+            }
+            <div style="margin-top: 12px;">
+                <FluentButton OnClick="RefreshCacheStats">Refresh</FluentButton>
+                <FluentButton OnClick="ClearCache" Style="margin-left: 8px; color: red;">Clear All Cache</FluentButton>
+            </div>
+        </FluentCard>
+    </FluentGridItem>
+
+</FluentGrid>
+
+@code {
+    // Email bloom
+    private string _email = "";
+    private BloomCheckResult? _emailResult;
+    private string _emailMsg = "";
+
+    // Rate limiter
+    private string _rateLimitUserId = "demo-user";
+    private RateLimitResult? _rateLimitResult;
+
+    // Product view bloom
+    private string _viewUserId = "", _viewProductId = "";
+    private ProductViewResult? _productViewResult;
+    private string _viewMsg = "";
+
+    // Cache
+    private CacheStats? _cacheStats;
+
+    protected override async Task OnInitializedAsync() => await RefreshCacheStats();
+
+    private async Task CheckEmail()
+    {
+        if (string.IsNullOrWhiteSpace(_email)) return;
+        _emailResult = await Api.CheckEmailAsync(_email);
+        _emailMsg = "";
+    }
+
+    private async Task RegisterEmail()
+    {
+        if (string.IsNullOrWhiteSpace(_email)) return;
+        await Api.RegisterEmailAsync(_email);
+        _emailMsg = $"'{_email}' registered in Bloom filter.";
+        _emailResult = null;
+    }
+
+    private async Task HitRateLimit()
+    {
+        if (string.IsNullOrWhiteSpace(_rateLimitUserId)) return;
+        _rateLimitResult = await Api.CheckRateLimitAsync(_rateLimitUserId);
+    }
+
+    private async Task CheckProductView()
+    {
+        if (string.IsNullOrWhiteSpace(_viewUserId) || string.IsNullOrWhiteSpace(_viewProductId)) return;
+        _productViewResult = await Api.CheckProductViewAsync(_viewUserId, _viewProductId);
+        _viewMsg = "";
+    }
+
+    private async Task RecordProductView()
+    {
+        if (string.IsNullOrWhiteSpace(_viewUserId) || string.IsNullOrWhiteSpace(_viewProductId)) return;
+        await Api.RecordProductViewAsync(_viewUserId, _viewProductId);
+        _viewMsg = $"View recorded for product '{_viewProductId[..Math.Min(8, _viewProductId.Length)]}…'";
+        _productViewResult = null;
+    }
+
+    private async Task RefreshCacheStats() => _cacheStats = await Api.GetCacheStatsAsync();
+
+    private async Task ClearCache()
+    {
+        await Api.ClearAllCacheAsync();
+        await RefreshCacheStats();
+    }
+}

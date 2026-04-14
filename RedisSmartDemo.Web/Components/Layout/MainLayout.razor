@@ -1,20 +1,19 @@
 ﻿@inherits LayoutComponentBase
 
-<div class="page">
-    <div class="sidebar">
+<FluentLayout Style="height: 100vh;">
+    <FluentHeader Style="background: #0078d4; color: white; padding: 0 16px; display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 1.4rem;">🔴</span>
+        <span style="font-size: 1.1rem; font-weight: 600;">Smart Dashboard</span>
+        <span style="font-size: 0.85rem; opacity: 0.8; margin-left: 4px;">Redis Stack · .NET Aspire</span>
+    </FluentHeader>
+
+    <FluentStack Orientation="Orientation.Horizontal" Style="flex: 1; overflow: hidden;" VerticalAlignment="VerticalAlignment.Stretch">
         <NavMenu />
-    </div>
-
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
-
-        <article class="content px-4">
+        <div style="flex: 1; overflow-y: auto; padding: 20px;">
             @Body
-        </article>
-    </main>
-</div>
+        </div>
+    </FluentStack>
+</FluentLayout>
 
 <div id="blazor-error-ui">
     An unhandled error has occurred.

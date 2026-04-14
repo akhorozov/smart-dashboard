@@ -1,7 +1,74 @@
-﻿@page "/"
+@page "/"
+@inject ApiClient Api
 
-<PageTitle>Home</PageTitle>
 
-<h1>Hello, world!</h1>
+<PageTitle>Smart Dashboard</PageTitle>
 
-Welcome to your new app.
+<FluentLabel Typo="Typography.H1">Smart Dashboard</FluentLabel>
+<FluentLabel Typo="Typography.Body" Style="margin-bottom: 24px; color: #666;">
+    A .NET Aspire demo showcasing 7 Redis Stack capabilities.
+</FluentLabel>
+
+<FluentGrid Spacing="4">
+    <FluentGridItem xs="12" sm="6" md="4">
+        <FluentCard Style="padding: 20px; text-align: center;">
+            <div style="font-size: 2rem;">👤</div>
+            <FluentLabel Typo="Typography.H4">RedisJSON</FluentLabel>
+            <FluentLabel>User CRUD with JSON.SET / JSON.GET</FluentLabel>
+            <div style="margin-top: 12px;">
+                <FluentAnchor Href="/users" Appearance="Appearance.Accent">Users →</FluentAnchor>
+            </div>
+        </FluentCard>
+    </FluentGridItem>
+    <FluentGridItem xs="12" sm="6" md="4">
+        <FluentCard Style="padding: 20px; text-align: center;">
+            <div style="font-size: 2rem;">🔍</div>
+            <FluentLabel Typo="Typography.H4">RediSearch</FluentLabel>
+            <FluentLabel>Full-text + numeric product search</FluentLabel>
+            <div style="margin-top: 12px;">
+                <FluentAnchor Href="/products" Appearance="Appearance.Accent">Products →</FluentAnchor>
+            </div>
+        </FluentCard>
+    </FluentGridItem>
+    <FluentGridItem xs="12" sm="6" md="4">
+        <FluentCard Style="padding: 20px; text-align: center;">
+            <div style="font-size: 2rem;">📈</div>
+            <FluentLabel Typo="Typography.H4">RedisTimeSeries</FluentLabel>
+            <FluentLabel>Live auto-generated metrics charts</FluentLabel>
+            <div style="margin-top: 12px;">
+                <FluentAnchor Href="/metrics" Appearance="Appearance.Accent">Metrics →</FluentAnchor>
+            </div>
+        </FluentCard>
+    </FluentGridItem>
+    <FluentGridItem xs="12" sm="6" md="4">
+        <FluentCard Style="padding: 20px; text-align: center;">
+            <div style="font-size: 2rem;">📡</div>
+            <FluentLabel Typo="Typography.H4">Pub/Sub</FluentLabel>
+            <FluentLabel>Real-time activity feed via Redis channels</FluentLabel>
+            <div style="margin-top: 12px;">
+                <FluentAnchor Href="/activity" Appearance="Appearance.Accent">Activity →</FluentAnchor>
+            </div>
+        </FluentCard>
+    </FluentGridItem>
+    <FluentGridItem xs="12" sm="6" md="4">
+        <FluentCard Style="padding: 20px; text-align: center;">
+            <div style="font-size: 2rem;">✨</div>
+            <FluentLabel Typo="Typography.H4">Vector Search</FluentLabel>
+            <FluentLabel>KNN product recommendations via HNSW</FluentLabel>
+            <div style="margin-top: 12px;">
+                <FluentAnchor Href="/recommendations" Appearance="Appearance.Accent">Recommendations →</FluentAnchor>
+            </div>
+        </FluentCard>
+    </FluentGridItem>
+    <FluentGridItem xs="12" sm="6" md="4">
+        <FluentCard Style="padding: 20px; text-align: center;">
+            <div style="font-size: 2rem;">🛡️</div>
+            <FluentLabel Typo="Typography.H4">Bloom + Rate Limiting</FluentLabel>
+            <FluentLabel>Probabilistic deduplication &amp; throttling</FluentLabel>
+            <div style="margin-top: 12px;">
+                <FluentAnchor Href="/admin" Appearance="Appearance.Accent">Admin →</FluentAnchor>
+            </div>
+        </FluentCard>
+    </FluentGridItem>
+</FluentGrid>
+

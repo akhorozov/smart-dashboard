@@ -1,0 +1,60 @@
+@page "/recommendations"
+@inject ApiClient Api
+
+
+<PageTitle>Recommendations</PageTitle>
+
+<FluentLabel Typo="Typography.H2">Recommendations <FluentBadge Appearance="Appearance.Accent">Vector Search</FluentBadge></FluentLabel>
+<FluentLabel Style="color: #666; margin-bottom: 20px;">
+    KNN queries using HNSW index · Mock SHA-256 embeddings (64-dim FLOAT32)
+</FluentLabel>
+
+<FluentCard Style="padding: 16px; margin-bottom: 20px;">
+    <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="12" Style="align-items: flex-end;">
+        <FluentTextField @bind-Value="_userId" Placeholder="Enter User ID" Style="width: 320px;" Label="User ID" />
+        <FluentNumberField @bind-Value="_count" Min="1" Max="20" Style="width: 100px;" Label="Top K" />
+        <FluentButton Appearance="Appearance.Accent" OnClick="GetRecommendations" Disabled="_loading">Get</FluentButton>
+    </FluentStack>
+</FluentCard>
+
+@if (_loading)
+{
+    <FluentProgressRing />
+}
+else if (_recommendations != null)
+{
+    @if (_recommendations.Count == 0)
+    {
+        <FluentMessageBar Intent="MessageIntent.Warning">
+            No embeddings found. Go to Products, add products, and click "Embed" on each one first.
+        </FluentMessageBar>
+    }
+    else
+    {
+        <FluentDataGrid Items="_recommendations.AsQueryable()" TGridItem="Recommendation" Style="width: 100%;">
+            <TemplateColumn Title="Rank" Context="r">
+                <FluentBadge>@(_recommendations.IndexOf(r) + 1)</FluentBadge>
+            </TemplateColumn>
+            <PropertyColumn Property="r => r.ProductId" Title="Product ID" Style="font-family: monospace; font-size: 0.8rem;" />
+            <TemplateColumn Title="Similarity" Context="r">
+                <FluentProgressBar Min="0" Max="1" Value="(float)r.Score" Style="width: 120px;" />
+                <span style="margin-left: 8px; font-size: 0.85rem;">@r.Score.ToString("F4")</span>
+            </TemplateColumn>
+        </FluentDataGrid>
+    }
+}
+
+@code {
+    private List<Recommendation>? _recommendations;
+    private string _userId = "";
+    private int _count = 5;
+    private bool _loading = false;
+
+    private async Task GetRecommendations()
+    {
+        if (string.IsNullOrWhiteSpace(_userId)) return;
+        _loading = true;
+        _recommendations = await Api.GetRecommendationsAsync(_userId, _count) ?? [];
+        _loading = false;
+    }
+}

@@ -1,0 +1,88 @@
+@page "/metrics"
+@using ApexCharts
+@inject ApiClient Api
+@implements IDisposable
+
+
+<PageTitle>Metrics</PageTitle>
+
+<FluentLabel Typo="Typography.H2">Metrics <FluentBadge Appearance="Appearance.Accent">RedisTimeSeries</FluentBadge></FluentLabel>
+<FluentLabel Style="color: #666; margin-bottom: 20px;">Auto-generated data every 5 seconds · Showing last 5 minutes</FluentLabel>
+
+<FluentGrid Spacing="4">
+    @foreach (var metric in _metrics)
+    {
+        <FluentGridItem xs="12" sm="6">
+            <FluentCard Style="padding: 16px;">
+                <FluentLabel Typo="Typography.H4" Style="text-transform: capitalize; margin-bottom: 8px;">
+                    @metric.Key @GetUnit(metric.Key)
+                </FluentLabel>
+                @if (metric.Value.Count > 1)
+                {
+                    <ApexChart TItem="MetricDataPoint" Options="_chartOptions">
+                        <ApexPointSeries TItem="MetricDataPoint"
+                            Items="metric.Value"
+                            Name="@metric.Key"
+                            SeriesType="SeriesType.Area"
+                            XValue="p => p.DateTime"
+                            YAggregate="@(items => items.Average(p => (decimal)p.Value))"
+                            OrderBy="p => p.X" />
+                    </ApexChart>
+                }
+                else
+                {
+                    <FluentLabel Style="color: #aaa;">Waiting for data…</FluentLabel>
+                }
+            </FluentCard>
+        </FluentGridItem>
+    }
+</FluentGrid>
+
+@code {
+    private Dictionary<string, List<MetricDataPoint>> _metrics = new()
+    {
+        ["cpu"]         = [],
+        ["temperature"] = [],
+        ["latency"]     = [],
+        ["events"]      = []
+    };
+
+    private Timer? _timer;
+
+    private ApexChartOptions<MetricDataPoint> _chartOptions = new()
+    {
+        Chart = new Chart { Toolbar = new Toolbar { Show = false }, Height = 180 },
+        Stroke = new Stroke { Curve = Curve.Smooth, Width = [2] },
+        Xaxis = new XAxis { Type = XAxisType.Datetime },
+        Grid  = new Grid { BorderColor = "#e0e0e0" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMetrics();
+        _timer = new Timer(async _ =>
+        {
+            await LoadMetrics();
+            await InvokeAsync(StateHasChanged);
+        }, null, 5000, 5000);
+    }
+
+    private async Task LoadMetrics()
+    {
+        var data = await Api.GetAllMetricsAsync();
+        if (data == null) return;
+        foreach (var kv in data)
+            _metrics[kv.Key] = kv.Value;
+    }
+
+    private static string GetUnit(string metric) => metric switch
+    {
+        "cpu"         => "(% Load)",
+        "temperature" => "(°C)",
+        "latency"     => "(ms)",
+        "events"      => "(req/s)",
+        _             => ""
+    };
+
+    public void Dispose() => _timer?.Dispose();
+}

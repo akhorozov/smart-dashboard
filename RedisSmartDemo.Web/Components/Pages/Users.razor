@@ -1,0 +1,107 @@
+@page "/users"
+@inject ApiClient Api
+
+
+<PageTitle>Users</PageTitle>
+
+<FluentLabel Typo="Typography.H2">Users <FluentBadge Appearance="Appearance.Accent">RedisJSON</FluentBadge></FluentLabel>
+
+<!-- New user form -->
+<FluentCard Style="padding: 16px; margin-bottom: 20px;">
+    <FluentLabel Typo="Typography.H4" Style="margin-bottom: 12px;">Add User</FluentLabel>
+    <FluentStack Orientation="Orientation.Horizontal" Wrap="true" HorizontalGap="12">
+        <FluentTextField @bind-Value="_newName" Placeholder="Name" Style="width: 200px;" />
+        <FluentTextField @bind-Value="_newEmail" Placeholder="Email" Style="width: 240px;" />
+        <FluentButton Appearance="Appearance.Accent" OnClick="CreateUser" Disabled="_saving">Add</FluentButton>
+    </FluentStack>
+</FluentCard>
+
+<!-- Users table -->
+@if (_loading)
+{
+    <FluentProgressRing />
+}
+else if (_users?.Count == 0)
+{
+    <FluentLabel>No users yet.</FluentLabel>
+}
+else
+{
+    <FluentDataGrid Items="_users!.AsQueryable()" TGridItem="User" Style="width: 100%;">
+        <PropertyColumn Property="u => u.Id" Title="ID" Style="font-family: monospace; font-size: 0.8rem;" />
+        <PropertyColumn Property="u => u.Name" Title="Name" />
+        <PropertyColumn Property="u => u.Email" Title="Email" />
+        <TemplateColumn Title="Theme" Context="u">
+            @(u.Preferences?.Theme ?? "light")
+        </TemplateColumn>
+        <TemplateColumn Title="Cache" Context="u">
+            @if (_cacheHits.Contains(u.Id))
+            {
+                <FluentBadge Appearance="Appearance.Accent" Style="background:#107c10;">HIT</FluentBadge>
+            }
+            else
+            {
+                <FluentBadge>MISS</FluentBadge>
+            }
+        </TemplateColumn>
+        <TemplateColumn Title="Actions" Context="u">
+            <FluentButton Appearance="Appearance.Outline" OnClick="() => FetchUser(u.Id)">Fetch</FluentButton>
+            <FluentButton Appearance="Appearance.Outline" OnClick="() => DeleteUser(u.Id)" Style="color: red;">Delete</FluentButton>
+        </TemplateColumn>
+    </FluentDataGrid>
+}
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <FluentMessageBar Intent="MessageIntent.Success" Style="margin-top: 12px;">@_message</FluentMessageBar>
+}
+
+@code {
+    private List<User>? _users;
+    private HashSet<string> _cacheHits = new();
+    private string _newName = "";
+    private string _newEmail = "";
+    private bool _loading = true;
+    private bool _saving = false;
+    private string _message = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        _loading = true;
+        _users = await Api.GetUsersAsync() ?? [];
+        _loading = false;
+    }
+
+    private async Task CreateUser()
+    {
+        if (string.IsNullOrWhiteSpace(_newName) || string.IsNullOrWhiteSpace(_newEmail)) return;
+        _saving = true;
+        var user = new User(Guid.NewGuid().ToString(), _newName, _newEmail);
+        await Api.CreateUserAsync(user);
+        _newName = ""; _newEmail = "";
+        _message = $"User created!";
+        _saving = false;
+        await LoadUsers();
+    }
+
+    private async Task FetchUser(string id)
+    {
+        // Second fetch will be a cache hit
+        await Api.GetUserAsync(id);
+        _cacheHits.Add(id);
+        var stats = await Api.GetCacheStatsAsync();
+        _message = stats != null ? $"Cache — Hits: {stats.Hits}, Misses: {stats.Misses}, Hit rate: {stats.HitRate:P0}" : "";
+    }
+
+    private async Task DeleteUser(string id)
+    {
+        await Api.DeleteUserAsync(id);
+        _cacheHits.Remove(id);
+        await LoadUsers();
+    }
+}
